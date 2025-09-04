@@ -1,0 +1,136 @@
+<!-- 요청 동작이 들어오면 form 태그의 action에 있는 부분을 호출 -->
+	<form action="sv1" method="post">
+	<h1>Post 방식으로 부르는 페이지입니다.</h1>
+	
+	
+	<input type="submit" value="확인">
+	</form>
+
+protected void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+//		//get 방식으로 요청한 경우 실행되는 메서드
+//		//웹 페이지에 출력되는 내용을 HTML 코드를 포함하여 기술
+		//응답할 때 한글 타입 설정
+		response.setContentType("text/html;charset=utf-8");
+		
+		PrintWriter out = response.getWriter(); <-- PrintWriter에 컨트롤 스페이스바
+		out.println("<html><body>");  
+		out.println("<h1>Hello Serviet(결과 페이지입니다.)<h1>");
+		out.println("</body><html>");
+		out.close();
+		
+		
+	}
+
+	/**
+	 * @see HttpServlet#doPost(HttpServletRequest request, HttpServletResponse response)
+	 */
+	protected void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+		//post 방식으로 요청한 경우 실행되는 메서드
+		//get 방식 처리내용과 동일하다면 doGet() 메서드 호출해서 처리
+		doGet(request, response);
+
+	}
+ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
+<!-- addrGet.html -->
+	<form action = "Address" method="post">
+	<p>이름 : <input type="text" name ="name"></p>
+	<p>주소 : <input type="text" name ="addr"></p>
+	<p><input type="submit" value="확인"></p>
+	</form>
+
+protected void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+		//get 방식으로 요청이 들어온 경우 실행
+		//input 태그에서 입력되어 넘어온 데이터(이름, 주소)를 받아야함
+		//모든 요청 데이터는 request 객체에 담아서 넘어옴
+		response.setContentType("text/html;charset=utf-8");
+		
+		String name = request.getParameter("name");
+		String addr = request.getParameter("addr");
+		
+		PrintWriter out = response.getWriter();
+		out.println("<html><body>");
+		out.println("<h2>" + name + "님은" + addr + "에 사는군요.</h2>");
+		out.println("</body></html>");
+	ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
+<!-- factorial.jsp -->
+	<%!
+		//선언부 : 팩토리얼 계산 함수 선언
+		
+		int factorial(int n){
+			int result = 1;
+		
+			for(int i=n; i>1; i--){
+				result *= 1;
+			
+		}
+		return result;
+	}
+	
+	
+	%>
+	
+	<h2> 팩토리얼 계산하기</h2>
+	<h3> 5! = <%=factorial(5) %></h3> ㅡㅡ여기 오류터짐 jsp파일
+ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
+<%
+		int sum = 0;
+		for(int i=0; i<=100; i++){
+			if(i%2 !=0)
+				continue;
+			sum+=i;
+			
+		}
+	
+	%>
+	
+	
+	
+	<!-- 자바 변수 값을 화면에 표현할 때 : 표현식 -->
+
+	<h2> 1부터 100까지의 숫자 중 모든 짝수의 합 = <%= sum %></h2> jsp파일
+ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ  
+	<!-- date.jsp -->
+	<%
+		Date date = new Date();
+		SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd hh:mm:ss");
+		String dateStr = sdf.format(date);
+	%>
+	<h3>오늘 날짜 및 현재 시각<br> <%=dateStr %></h3>
+jsp파일 오류터짐
+ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
+
+<h3>개인 정보 입력</h3>
+	<form action="infoResult.jsp">
+		<p>이름 : <input type="text" name="name"></p>
+		<p>주소 : <input type="text" name="addr"></p>
+		<input type="submit" value="확인">	
+	</form> ㅡㅡhtml
+<%
+		String name = request.getParameter("name");
+		String addr = request.getParameter("addr");
+		
+	%>
+	<h3> <%=name %>님은 <%=addr %>에 사는군요.</h3> jsp
+ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
+	<h3>두 수를 입력하세요</h3>
+	<form action="numbers.jsp">
+		<p>숫자1 : <input type="text" name="num1"></p>
+		<p>숫자2: <input type="text" name="num2"></p>
+		<input type="submit" value="확인">	
+	</form> html
+<%
+		int num1 = Integer.parseInt(request.getParameter("num1"));
+		int num2 = Integer.parseInt(request.getParameter("num2"));
+		
+		int a= num1+num2;
+		int b = (num1-num2);
+		int c = num1 * num2;
+		int d = num1 / num2;
+%>
+
+	<h2>사칙연산 결과</h2>
+	<p> <%=num1 %> + <%=num2 %> = <%=a %></p>
+	<p> <%=num1 %> - <%=num2 %> = <%=b %></p>
+	<p> <%=num1 %> * <%=num2 %> = <%=c %></p>
+	<p> <%=num1 %> / <%=num2 %> = <%=d %></p>
+	jsp
