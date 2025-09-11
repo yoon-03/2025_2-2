@@ -1,0 +1,174 @@
+<!-- dateTime.jsp -->
+	<%
+		//스크립틀릿 - 자바 소스 코드
+		Date date = new Date();					//컨트롤 + 스페이스로 임포트가져옴
+		SimpleDateFormat sdfDate = new SimpleDateFormat("yyyy년 MM월-dd일입니다.");
+		SimpleDateFormat sdfTime = new SimpleDateFormat("hh시 mm분 ss초입니다.");
+			
+				
+		String dateStr = sdfDate.format(date);
+		String timeStr = sdfTime.format(date);
+	%>
+	
+	<h1> 오늘은 <%=dateStr %></h1>
+	<h2>현재 시각 : <%=timeStr %></h2>
+ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
+
+	<!-- include.jsp -->
+	<h1>가장 여행하고 싶은 나라는?</h1>
+	<h3>1. 프랑스</h3>
+	<h3>2. 헝가리</h3>
+	<h3>3. 이탈리아</h3>
+	<h3>4. 캐나다</h3>
+	<h3>5. 호주</h3>
+	
+	<%@ include file="dateTime.jsp"%>
+
+ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
+comment.jsp  
+
+<%
+	  	int result = 1;
+	  	
+	 
+	  	for(int i=1; i<=10; i++){
+	  		result *= i;
+	  	}
+	  %>
+	  
+	  <br>
+	  1부터 10까지 곱한 값 = <%= result %>
+
+ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
+requestInfo.jsp
+<h2>클라이언트 및 서버 정보</h2>
+	클라이언트 IP = <%=request.getRemoteAddr() %><br>
+
+	요청정보 인코딩 = <%=request.getCharacterEncoding() %><br>
+	요청정보 프로토콜 = <%=request.getProtocol() %><br>
+	요청정보 전송방식 = <%=request.getMethod() %><br>
+	요청 URL = <%=request.getRequestURL() %><br>
+	서버 이름 = <%=request.getServerName() %><br>
+	서버 포트 = <%=request.getServerPort() %>
+ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
+
+
+viewParameter.jsp
+
+form action="viewResult.jsp">
+		이름 : <input type="text" name="name"><br>
+		주소 : <input type="text" name="addr"><br>
+		<br>
+		좋아하는 동물 : <br>
+			<input type="checkbox" name="pet" value="dog">강아지 <br>
+			<input type="checkbox" name="pet" value="cat">고양이 <br>
+			<input type="checkbox" name="pet" value="pig">돼지 <br>		
+			<input type="checkbox" name="pet" value="fish">물고기 <br>
+			<input type="checkbox" name="pet" value="bird">새 <br><br>
+		<input type="submit" value= "확인">
+			
+	
+	</form>
+
+ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
+
+viewResult.jsp
+
+	<h2>요청 파라미터 출력</h2>
+	<h3 style="color:red;">request.getParameter()로 읽기</h3>
+	name 파라미터 = <%=request.getParameter("name") %><br>
+	addr 파라미터 = <%=request.getParameter("addr") %><br>
+	
+	<h3 style="color:red;">request.getParameterValues()로 읽기</h3>
+	
+	<% String[] values = request.getParameterValues("pet");
+		if(values != null){
+			for(String s : values){
+				out.println(s);
+			}
+		}
+		%>;
+		
+		<p>
+		<h3 style="color:red;">request.getParameterNames()로 읽기</h3>
+		<%
+			//파라미터 목록 읽기
+			Enumeration pNames = request.getParameterNames();
+		
+			while(pNames.hasMoreElements()){
+				String pName = (String)pNames.nextElement();
+				out.println(pName);
+			}
+		%>
+		
+		<p>
+		<h3 style="color:red;">request.getParameterMap()로 읽기</h3>
+		
+		<%
+			Map map = request.getParameterMap();
+			String[] value = (String[])map.get("name");
+			System.out.println("Map 형식 : " + ("name" + value[0]));
+		%>
+
+ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
+
+infoBasic.html
+
+
+
+	<h1>수강 신청 정보 입력</h1>
+	
+	<form action="InfoBasic.jsp">
+		학번 : <input type="text" name="num"><br>
+		나이 : <input type="text" name="age"><br>
+	
+		<br>
+		신청과목 : <br>
+			<input type="checkbox" name="sub" value="Jsp">Jsp <br>
+			<input type="checkbox" name="sub" value="Java">Java <br>
+			<input type="checkbox" name="sub" value="C++">C++ <br>		
+			<input type="checkbox" name="sub" value="Python">Python <br>
+		<input type="submit" value= "확인">
+			
+	
+	</form>
+
+ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
+infoBasic.jsp
+
+	<%
+		String stNum = request.getParameter("stnum");
+		String[] subjects = request.getParameterValues("sub")
+				int age = Integer.parseInt(request.getParameter("age"));
+	
+	%>
+
+
+
+	<h2>학번 : <%=stNum%></h2>
+	<h2>나이 : <%=age %>
+	<% 
+		if(age >= 20)
+			out.println(" (성인)");
+			
+		else
+			out.println("(미성년자)");
+	%>
+	
+	</h2>
+	<br>
+	
+	<h1>선택한 과목 목록</h1>
+	<ul>
+		<%
+		
+			if(subjects != null){
+				for(String s :subjects)
+					out.println("<li>" + s + "</li>");
+				
+				else
+					out.println("<li>선택한 과목이 없습니다.</li>");
+		
+		%>
+	</ul>
+	
