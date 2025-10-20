@@ -1,0 +1,37 @@
+반올림 = round(인수1, 인수2) ex round(AVG(stu_weight), 2)
+나머지 = mod(인수1, 인수2) 인수 1값을 인수2 값으로 나눈 나머지를 반환
+절대값 ABS(인수)
+소문자변환(LOWER)
+대문자변환(UPPER)
+INITCAP = 첫문자를 대문자로 변환
+substr(인수1, 인수2, 인수3) 문자열인수1의 일부분을 추출하여 반환
+length = 문자인수의 길이를 반환
+LPAD(인수1, 인수2, 인수3) 자릿수를 지정하고 빈 공간을 특정문자로 왼쪽부터 채움
+RPAD(인수1, 인수2, 인수3) 자릿수를 지정하고 빈 공간을 특정문자로 오른쪽부터 채
+
+
+날짜출력형식지정
+to_char(hiredate,'yyyy-mm') = ex 1992-01
+
+문자를 숫자로 변환
+to_number(1234,5678),'9999,999') = 1234,567 ( 8은 날라감)
+
+nvl = 인수 1이 널이면 인수2를 아니면 인수반환 == 널값을 인수2로 바꾸는식
+select nvl(stu_height, 0) from student;
+
+nvl2 = 인수1이 널이 아니면 인수 2를, 인수1이 널이면 3을 반환
+
+case 쓰는법
+select empno,  ename, job, sal,
+case job when 'SALESMAN' then sal * 1.1
+when 'CLERK' then sal * 1.15
+else sal end (as 급여인상)
+from emp;
+보면 알다시피  case when (대상) then 조건문 when ~~ else ~~(default로 쓸꺼) end 하면됨
+
+join
+  right, left full 조인은 평소 조인 앞에 쓰면됨
+
+
+
+
