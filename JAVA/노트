@@ -7,4 +7,46 @@ AWT SWING = 자바언어로 GUI를 만들 수 있게 해주는 tool
     SWING OS와 독립적인 자바로만 구현하기에 어느 운영체제로 봐도 동일하게 보임(AWT 보다 다양하고 화려한 컴포넌트 제공, 현재 일반적으로 사용됨)
     (pure java language ,순수한 자바로)
 
-  
+  색깔 받는버전
+
+int R = Integer.parseInt(txtRed.getText());
+int G = Integer.parseInt(txtGreen.getText());
+int B = Integer.parseInt(txtBlue.getText());
+
+Color c = new Color(R, G, B);
+
+jColorChooser1.showDialog(null, "색 선택", c);
+
+색값 받아오는 버전
+
+Color color = jColorChooser1.getColor();
+txtRed.setText = (String valueOf(color.getRed());
+txtGreen.setText = (String valueOf(color.getGreen());
+txtBlue.setText = (string valueOf(color.getBlue());
+
+파일 열고 주소 절대값 가져오는 코드
+FileDialog fd = new FileDialog(this, "파일 열기", FileDialog.LOAD);
+fd.setVisible(true);
+String filePath = fd.getDirectory() + fd.getFile();
+txtFileName.setText(filePath);
+
+String Text = getText(TextField);
+TextArea.append(text + "\n");
+
+int value = jSlider.getValue();
+label.setText(value);
+
+int row = jTable.getSelectedRow();
+TestField1.setText(JTable1.selectRow(row, 0).toString());
+TestField2.setText(JTable1.selectRow(row, 1).toString());
+TestField3.setText(JTable1.selectRow(row, 2).toString());
+
+FileDialog fd = new FileDialog(this, "새 파일", FileDialog.SAVE);
+fd.setVisible(true);
+String FilePath = Fd.getDirectory() + fd.getFile();
+txtfilename.setText(FilePath);
+
+Color color = getColor(ColorChooser());
+txtRed = String.valueAt(color.getRed());
+txtGreen = String.valueAt(color.getGreen());
+txtBlue = String.valueAt(color.getBlue());
