@@ -1,4 +1,4 @@
-반올림 = round(인수1, 인수2) ex round(AVG(stu_weight), 2)
+ 반올림 = round(인수1, 인수2) ex round(AVG(stu_weight), 2)
 나머지 = mod(인수1, 인수2) 인수 1값을 인수2 값으로 나눈 나머지를 반환
 절대값 ABS(인수)
 소문자변환(LOWER)
@@ -30,7 +30,7 @@ from emp;
 보면 알다시피  case when (대상) then 조건문 when ~~ else ~~(default로 쓸꺼) end 하면됨
 
 join
-  right, left full 조인은 평소 조인 앞에 쓰면됨
+  right, left full 조인은 평소 조인 앞에 쓰면됨 right outer join 이런식
 
 
 
