@@ -1,186 +1,307 @@
-import React, { useState, useEffect } from 'react'; // useEffect 추가
-import './App.css'; 
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
-import 'leaflet/dist/leaflet.css'; 
-import L from 'leaflet';
-import icon from 'leaflet/dist/images/marker-icon.png';
-import iconShadow from 'leaflet/dist/images/marker-shadow.png';
-import { FaPlus, FaStar, FaLock, FaUser } from 'react-icons/fa';
+// server.js
 
-let DefaultIcon = L.icon({
-  iconUrl: icon,
-  shadowUrl: iconShadow,
+// 1. 환경 변수 로드
+require('dotenv').config();
+
+// 2. 패키지 로드
+const express = require('express');
+const mysql = require('mysql2');
+const app = express();
+const port = 4000;
+const cors = require('cors');
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcrypt');
+
+// ✅ JSON 파싱
+app.use(express.json());
+
+app.use(cors({
+    origin: 'http://localhost:3000',
+    credentials: true
+}));
+
+// ✅ MySQL Pool
+const db = mysql.createPool({
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_DATABASE,
+    port: process.env.DB_PORT,
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
 });
-L.Marker.prototype.options.icon = DefaultIcon;
 
-// 백엔드 API 서버 주소 (Node.js 서버 주소)
-const API_URL = 'http://localhost:4000/api/stations';
-
-const MapComponent = () => {
-  // DB에서 가져온 대여소 목록을 저장할 상태
-  const [stations, setStations] = useState([]);
-  // 로딩 상태를 관리합니다.
-  const [loading, setLoading] = useState(true); 
-  
-  // 지도의 중심 좌표를 상태로 관리합니다. (초기값은 서울 시청 근처로 설정하거나, 데이터가 로드된 후 첫 번째 대여소 위치로 설정합니다.)
-  const [mapCenter, setMapCenter] = useState([37.5665, 126.9780]); 
-  
-  const [activeTab, setActiveTab] = useState('map');
-  const [favorites, setFavorites] = useState([]);
-
-
-  // DB 데이터 가져오기
-
-  useEffect(() => {
-    fetch(API_URL)
-      .then(response => {
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        return response.json();
-      })
-      .then(data => {
-        // 1. DB 데이터를 지도에 필요한 형태로 가공 (lat, lng -> position 배열)
-        const mapData = data.map(station => ({
-          name: station.name,
-          // DB에서 가져온 lat(위도), lng(경도)를 position 배열로 사용
-          position: [station.lat, station.lng], 
-          count: station.count,
-          station_id: station.station_id,
-        }));
-        
-        setStations(mapData); // 가공된 데이터 저장
-        
-        // 2. 데이터가 로드되면 지도의 중심을 첫 번째 대여소로 설정
-        if (mapData.length > 0) {
-          setMapCenter(mapData[0].position);
-        }
-
-        setLoading(false); // 로딩 완료
-      })
-      .catch(error => {
-        console.error("데이터 가져오기 오류:", error);
-        alert("대여소 데이터를 불러오는 데 실패했습니다. 서버를 확인해주세요.");
-        setLoading(false);
-      });
-  }, []); // 컴포넌트가 처음 렌더링될 때 한 번만 실행
-
-  // 즐겨찾기 추가 함수 (기존 로직 유지)
-  const handleAddFavorite = (station) => {
-    const isFavorite = favorites.some(fav => fav.name === station.name);
-    if (!isFavorite) {
-      setFavorites([...favorites, station]);
-      alert(`${station.name}이(가) 즐겨찾기에 추가되었습니다.`);
-    } else {
-      alert(`${station.name}은(는) 이미 즐겨찾기에 있습니다.`);
+// ✅ 연결 테스트
+db.getConnection((err, conn) => {
+    if (err) {
+        console.error('MySQL 연결 실패:', err.message);
+        return;
     }
-  };
+    console.log('✅ MySQL 연결 성공!');
+    conn.release();
+});
 
-  // 즐겨찾기 목록 항목 클릭 시 지도 위치로 이동하는 함수 (기존 로직 유지)
-  const handleGoToFavorite = (position) => {
-    setMapCenter(position); 
-    setActiveTab('map'); 
-  };
+app.get('/', (req, res) => {
+    res.send('API Server is running.');
+});
 
-  // 데이터 로딩 중 표시
-  if (loading) {
-    return <div className="loading-screen">데이터를 불러오는 중입니다...</div>;
-  }
 
-  return (
-    <div className="map-container">
-      {/* 헤더 */}
-      <header className="header">
-        <div className="search-bar">
-          <span className="rental-number">대여소 번호</span>
-          <input type="text" placeholder="원하시는 지역이 어디신가요?" />
-        </div>
-      </header>
+// ✅ JWT 인증 미들웨어
+const authenticateToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
 
-      {/* activeTab 값에 따라 다른 컴포넌트를 렌더링합니다. */}
-      {activeTab === 'map' && (
-        <MapContainer
-          // 지도의 center 속성을 상태 변수 mapCenter로 연결
-          center={mapCenter}
-          zoom={15}
-          scrollWheelZoom={true} // 스크롤 줌 기능 복원
-          className="map"
-        >
-          <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          />
-          
-          {/* DB에서 가져온 stations 데이터로 마커를 생성합니다. */}
-          {stations.map((station) => (
-            <Marker key={station.station_id} position={station.position}>
-              <Popup> 
-                <strong>{station.name}</strong>
-                <br />
-                남은 우산: {station.count}개
-                <br />
-                <button onClick={() => handleAddFavorite(station)}>
-                  즐겨찾기 추가
-                </button>
-              </Popup>
-            </Marker>
-          ))}
-        </MapContainer>
-      )}
+    if (!token) {
+        return res.status(401).json({ error: '인증 토큰이 누락되었습니다.' });
+    }
 
-      {/* 마이페이지, 즐겨찾기 페이지 (기존 로직 유지) */}
-      {activeTab === 'my' && (
-        <div className='my-page'>
-          <h2>마이 페이지</h2>
-          <div className='my-list-item'>
-            <FaUser className='my-icon'/>
-            <span>로그인 / 회원가입</span>
-          </div>
-          <p>여기에 로그인 및 회원가입 UI가 들어간다.</p>
-        </div>
-      )}
+    jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+        if (err) {
+            return res.status(403).json({ error: '토큰이 유효하지 않거나 만료되었습니다.' });
+        }
 
-      {activeTab === 'favorites' && (
-        <div className='favorites-page'>
-          <div className='favorites-header'>
-            <h3>즐겨찾기 목록</h3>
-            <div className='new-list'>
-              <FaPlus/> 새 리스트 만들기
-            </div>
-          </div>
-          <div className='favorites-list-container'>
-            {favorites.length > 0 ? (
-              favorites.map((station) => (
-                <div key={station.station_id} className='favorite-item' onClick={() => handleGoToFavorite(station.position)}>
-                  <div className='item-icon-wrapper'>
-                    <FaStar className='item-icon'/>
-                  </div>
-                  <div className='item-details'>
-                    <span className='item-name'>{station.name}</span>
-                    <div className='item-sub-info'>
-                      <FaLock/>
-                    </div>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <p>즐겨찾기에 추가된 대여소가 없습니다.</p>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* 하단 바 (시간 표시 포함) */}
-      <footer className="footer">
-        <div className="time-display">12 min</div>
-        <div className="nav-buttons">
-          <button className="nav-button" onClick={() => setActiveTab(activeTab === 'my' ? 'map' : 'my')}>MY</button>
-          <button className="nav-button" onClick={() => setActiveTab(activeTab === 'favorites' ? 'map' : 'favorites')}>즐겨찾기</button>
-          <button className="nav-button" onClick={() => setActiveTab('map')}>QR코드</button>
-        </div>
-      </footer>
-    </div>
-  );
+        req.userId = user.id; // ✅ user_id가 들어있음
+        next();
+    });
 };
 
-export default MapComponent;
+
+// ✅ 회원가입 라우트
+app.post('/api/auth/signup', (req, res) => {
+    const { email, password, phonenumber, nickname } = req.body;
+
+    if (!email || !password) {
+        return res.status(400).json({ error: '필수 정보를 입력해주세요.' });
+    }
+
+    bcrypt.hash(password, 10, (err, hashedPassword) => {
+        if (err) {
+            console.error('Hash Error:', err);
+            return res.status(500).json({ error: '비밀번호 해싱 오류' });
+        }
+
+        const insertQuery = `
+            INSERT INTO user (user_id, password, nickname, phonenumber, email)
+            VALUES (?, ?, ?, ?, ?)
+        `;
+
+        db.query(insertQuery, [email, hashedPassword, nickname, phonenumber, email], (err) => {
+            if (err) {
+                if (err.errno === 1062) {
+                    return res.status(409).json({ error: '이미 존재하는 사용자입니다.' });
+                }
+                console.error('Signup DB Error:', err);
+                return res.status(500).json({ error: '회원가입 중 DB 오류' });
+            }
+
+            // ✅ 실제 JWT 생성
+            const token = jwt.sign(
+                { id: email }, 
+                process.env.JWT_SECRET, 
+                { expiresIn: '1h' }
+            );
+
+            res.status(201).json({
+                message: '회원가입 성공',
+                token: token
+            });
+        });
+    });
+});
+//즐겨찾기
+app.post('/api/favorites', authenticateToken, (req, res) => {
+    const userId = req.userId;   // JWT에서 추출한 user_id
+    const { station_id } = req.body;
+
+    if (!station_id) {
+        return res.status(400).json({ error: "station_id가 필요합니다." });
+    }
+
+    const query = `
+        INSERT INTO bookmark (user_id, station_id)
+        VALUES (?, ?)
+    `;
+
+    db.query(query, [userId, station_id], (err) => {
+        if (err) {
+            if (err.errno === 1062) {
+                return res.status(409).json({ error: "이미 즐겨찾기에 추가된 대여소입니다." });
+            }
+            console.error("즐겨찾기 추가 DB 오류:", err);
+            return res.status(500).json({ error: "즐겨찾기 추가 중 오류 발생" });
+        }
+
+        res.json({ message: "즐겨찾기에 추가되었습니다." });
+    });
+});
+
+
+//가져오기
+app.get('/api/favorites', authenticateToken, (req, res) => {
+    const userId = req.userId;
+
+    const query = `
+        SELECT 
+            b.station_id,
+            s.name AS station_name,
+            s.lat AS latitude,
+            s.lng AS longitude
+        FROM bookmark b
+        JOIN station s ON b.station_id = s.station_id
+        WHERE b.user_id = ?
+    `;
+
+    db.query(query, [userId], (err, results) => {
+        if (err) {
+            console.error("즐겨찾기 조회 오류:", err);
+            return res.status(500).json({ error: "즐겨찾기 조회 실패" });
+        }
+        res.json(results);
+    });
+});
+
+// ✅ 로그인 라우트
+app.post('/api/auth/login', (req, res) => {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+        return res.status(400).json({ error: '아이디와 비밀번호를 입력해주세요.' });
+    }
+
+    const query = `
+        SELECT user_id, password
+        FROM user
+        WHERE user_id = ?
+    `;
+
+    db.query(query, [email], async (err, results) => {
+        if (err) {
+            console.error('Login DB Error:', err.message);
+            return res.status(500).json({ error: '로그인 DB 오류' });
+        }
+
+        if (results.length === 0) {
+            return res.status(401).json({ error: '존재하지 않는 계정입니다.' });
+        }
+
+        const user = results[0];
+
+        // ✅ 비밀번호 비교
+        const isMatch = await bcrypt.compare(password, user.password);
+
+        if (!isMatch) {
+            return res.status(401).json({ error: '비밀번호가 일치하지 않습니다.' });
+        }
+
+        // ✅ 정상 JWT 발급 (user.user_id 사용)
+        const token = jwt.sign(
+            { id: user.user_id }, 
+            process.env.JWT_SECRET,
+            { expiresIn: '1h' }
+        );
+
+        res.json({
+            message: '로그인 성공',
+            token: token
+        });
+    });
+});
+
+
+// ✅ 사용자 정보 조회
+app.get('/api/user', authenticateToken, (req, res) => {
+    const userId = req.userId;
+
+    const query = `
+        SELECT email, nickname, phonenumber
+        FROM user
+        WHERE user_id = ?
+    `;
+
+    db.query(query, [userId], (err, results) => {
+        if (err) {
+            console.error('User Fetch Error:', err);
+            return res.status(500).json({ error: '사용자 조회 오류' });
+        }
+
+        if (results.length === 0) {
+            return res.status(404).json({ error: '사용자를 찾을 수 없습니다.' });
+        }
+
+        const user = results[0];
+
+        res.json({
+            email: user.email,
+            nickname: user.nickname || '익명 사용자',
+            phonenumber: user.phonenumber
+        });
+    });
+});
+
+
+// ✅ 대여소 조회
+app.get('/api/stations', (req, res) => {
+    const region = req.query.region; // 쿼리 파라미터에서 region 값을 추출
+    
+    let query = 'SELECT * FROM station';
+    let params = [];
+
+    
+    if (region) {
+        // SQL Injection 방지를 위해 LIKE 대신 = 를 사용하거나, 
+        // 부분 검색이 필요하면 %를 추가합니다. 여기서는 정확히 일치하는 지역을 찾습니다.
+        query += ' WHERE region = ?';
+        params.push(region);
+    }
+    
+    // 쿼리 실행
+    db.query(query, params, (err, results) => {
+        if (err) {
+            console.error('Station Fetch DB Error:', err); 
+            return res.status(500).json({ error: 'DB 조회 오류' });
+        }
+         res.json(results);
+    });
+});
+
+// ✅ 즐겨찾기 삭제 (DELETE)
+app.delete('/api/favorites', authenticateToken, (req, res) => {
+    const userId = req.userId; // JWT에서 추출한 user_id
+    // DELETE 요청은 쿼리 파라미터를 사용합니다.
+    const station_id = req.query.station_id ? req.query.station_id.trim() : null;
+    // 1. station_id 누락 여부 확인 (클라이언트 측 오류 방지)
+    if (!station_id) {
+        return res.status(400).json({ error: "station_id가 필요합니다." });
+    }
+
+    const deleteQuery = `
+        DELETE FROM bookmark 
+        WHERE user_id = ? AND station_id = ?
+    `;
+
+    // 2. DB 삭제 쿼리 실행
+    db.query(deleteQuery, [userId, station_id], (err, result) => {
+        if (err) {
+            console.error("즐겨찾기 삭제 DB 오류:", err);
+            return res.status(500).json({ error: "즐겨찾기 삭제 중 오류 발생" });
+        }
+
+        // 3. 삭제 결과 확인
+        if (result.affectedRows === 0) {
+            // 삭제할 항목이 없는 경우
+            return res.status(404).json({ error: "해당 즐겨찾기 항목을 찾을 수 없습니다." });
+        }
+
+        // 4. 성공 응답
+        res.json({ message: "즐겨찾기에서 삭제되었습니다." });
+
+        
+    });
+});
+
+
+// ✅ 서버 실행
+app.listen(port, () => {
+    console.log(`🚀 서버가 http://localhost:${port} 에서 실행 중`);
+});
