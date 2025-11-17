@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef} from 'react';
+import React, { useState, useEffect, useCallback} from 'react';
 import './App.css'; 
 import { MapContainer, TileLayer, Marker, Popup, useMap} from 'react-leaflet';
 import 'leaflet/dist/leaflet.css'; 
@@ -6,11 +6,29 @@ import L from 'leaflet';
 import icon from 'leaflet/dist/images/marker-icon.png';
 import iconShadow from 'leaflet/dist/images/marker-shadow.png';
 
-import { FaPlus, FaStar, FaLock, FaUser, FaGoogle, FaHome, FaQrcode, FaCheck, FaMinusCircle} from 'react-icons/fa'; 
+import { FaStar, FaLock, FaUser, FaGoogle, FaHome, FaQrcode, FaCheck, FaMinusCircle} from 'react-icons/fa'; 
 
 // --- 백엔드 설정 ---
 const BACKEND_URL = 'http://localhost:4000';
 // -----------------
+// 대여소 거리 계산을 위한 상수 정의
+const EARTH_RADIUS_KM = 6371;
+
+// 두 위도/경도 간의 거리 계산 함수 (Haversine 공식)
+const getDistance = (lat1, lon1, lat2, lon2) => {
+    const toRad = (value) => (value * Math.PI) / 180;
+
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    
+    const a = 
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    
+    return EARTH_RADIUS_KM * c; // 결과는 km
+};
 
 let DefaultIcon = L.icon({
   iconUrl: icon,
@@ -44,8 +62,14 @@ const MapComponent = () => {
   const [centerPosition, setCenterPosition] = useState(null);
   //즐겨찾기 삭제를 위해 추가
   const [isDeleteMode, setIsDeleteMode] = useState(false);
-  //즐겨찾기 목록 열기/닫기
-  const [isFavoritesListOpen, setIsFavoritesListOpen] = useState(false);
+  //유저 위치 정보를 위해 추가
+  const [userLocation, setUserLocation] = useState(null);
+  //근처 대여소 표시를 위해 추가
+  const [nearbyStations, setNearbyStations] = useState([]);
+
+    // ✅ 근처 대여소 검색 활성화 상태 추가 (버튼 토글용)
+  const [isNearbySearchActive, setIsNearbySearchActive] = useState(false); 
+  const SEARCH_RADIUS = 2; // km
 
   const toggleDeleteMode = () => {
     setIsDeleteMode(prev => !prev);
@@ -86,17 +110,22 @@ const handleRemoveFavorite = async (station) => {
         alert("서버 통신 오류");
     }
 };
-// ✅ 즐겨찾기 목록 창을 닫는 함수
-const handleCloseFavorites = () => {
-    // 1. 즐겨찾기 목록 창 닫기 상태로 변경
-    setIsFavoritesListOpen(false); 
-    // 2. 🚨 삭제 모드 자동 종료 (요청하신 핵심 기능)
-    setIsDeleteMode(false);
+//근처 대여소 검색 토글 핸들러
+const handleNearbySearch = () => {
+    // 1. 상태 토글
+    const newState = !isNearbySearchActive;
+    setIsNearbySearchActive(newState);
+
+    // 2. 검색 활성화 시 (새로 켜는 경우) 현재 위치를 다시 가져와 최신 위치를 확보
+    if (newState) {
+        getCurrentLocation(); // getCurrentLocation 함수는 이미 정의되어 있어야 합니다.
+        setActiveTab('map'); // 지도로 이동
+    } else {
+        // 검색 종료 시 목록 초기화
+        setNearbyStations([]);
+    }
 };
-// ✅ 즐겨찾기 목록 창을 여는 함수
-const handleOpenFavorites = () => {
-    setIsFavoritesListOpen(true);
-};
+
 
   // --- JWT 인증 상태 ---
   const [userToken, setUserToken] = useState(localStorage.getItem('userToken'));
@@ -117,11 +146,49 @@ const handleOpenFavorites = () => {
   });
   const [authError, setAuthError] = useState('');
   
-  // 컴포넌트 마운트 및 토큰 변경 시 사용자 정보 및 즐겨찾기 가져오기
-  
-  //여기 아래 주석 뭔지는 모르겟는데 이게 있어야 돌아간다는데?
+  // 사용자 정보 가져오기
+  const fetchUserInfo = useCallback(async () => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/user`, {
+        headers: { 'Authorization': `Bearer ${userToken}` },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setUserInfo(data);
+      } else {
+        handleLogout(); // 토큰 만료 등 오류 시 로그아웃
+      }
+    } catch (error) {
+      console.error('Failed to fetch user info:', error);
+      handleLogout();
+    }
+  }, [userToken]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // 즐겨찾기 목록 가져오기
+  const fetchFavorites = useCallback(async () => {
+    try {
+        const res = await fetch(`${BACKEND_URL}/api/favorites`, {
+            headers: { Authorization: `Bearer ${userToken}` },
+        });
+
+        const data = await res.json();
+        
+        // 🚨 ✅ 수정: 백엔드에서 받은 키 이름(station_id, station_name 등)을 정확히 사용합니다.
+        const formattedFavorites = data.map(fav => ({
+            station_id: fav.station_id,       // <-- 이 값이 꼭 있어야 함
+            name: fav.station_name,         // name으로 통일
+            position: [fav.latitude, fav.longitude],
+            // location: fav.station_location, // location이 백엔드에서 오지 않을 경우 삭제
+        }));
+
+        setFavorites(formattedFavorites);
+    } catch (error) {
+        console.error("즐겨찾기 로딩 오류:", error);
+        setFavorites([]); // 오류 시 목록 비우기
+    }
+}, [userToken]);
+
+
   useEffect(() => {
     if (userToken) {
       fetchUserInfo();
@@ -130,7 +197,7 @@ const handleOpenFavorites = () => {
       setUserInfo(null);
       setFavorites([]);
     }
-  }, [userToken]);
+  }, [userToken, fetchUserInfo, fetchFavorites]);
 
   // ✅ 최초 렌더링 시 대여소(station) 데이터 불러오기
   useEffect(() => {
@@ -156,51 +223,6 @@ const handleOpenFavorites = () => {
 
   fetchStations();
 }, []); // ✅ 빈 배열 → 컴포넌트가 처음 렌더링될 때 1회만 실행
-
-
-  // --- API 통신 함수 ---
-
-  // 사용자 정보 가져오기
-  const fetchUserInfo = async () => {
-    try {
-      const response = await fetch(`${BACKEND_URL}/api/user`, {
-        headers: { 'Authorization': `Bearer ${userToken}` },
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setUserInfo(data);
-      } else {
-        handleLogout(); // 토큰 만료 등 오류 시 로그아웃
-      }
-    } catch (error) {
-      console.error('Failed to fetch user info:', error);
-      handleLogout();
-    }
-  };
-
-  // 즐겨찾기 목록 가져오기
-  const fetchFavorites = async () => {
-    try {
-        const res = await fetch(`${BACKEND_URL}/api/favorites`, {
-            headers: { Authorization: `Bearer ${userToken}` },
-        });
-
-        const data = await res.json();
-        
-        // 🚨 ✅ 수정: 백엔드에서 받은 키 이름(station_id, station_name 등)을 정확히 사용합니다.
-        const formattedFavorites = data.map(fav => ({
-            station_id: fav.station_id,       // <-- 이 값이 꼭 있어야 함
-            name: fav.station_name,         // name으로 통일
-            position: [fav.latitude, fav.longitude],
-            // location: fav.station_location, // location이 백엔드에서 오지 않을 경우 삭제
-        }));
-
-        setFavorites(formattedFavorites);
-    } catch (error) {
-        console.error("즐겨찾기 로딩 오류:", error);
-        setFavorites([]); // 오류 시 목록 비우기
-    }
-};
 
 
   // 로그인 및 회원가입 처리
@@ -348,6 +370,28 @@ const handleOpenFavorites = () => {
     alert("서버 오류");
   }
 };
+//유저 위치 정보 가져오기
+  const getCurrentLocation = () => {
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                // 성공 시, 위치를 [위도, 경도] 배열로 설정
+                setUserLocation([position.coords.latitude, position.coords.longitude]);
+            },
+            (error) => {
+                console.error("Geolocation Error:", error);
+                alert("현재 위치를 가져오는 데 실패했습니다. 위치 권한을 확인해주세요.");
+            },
+            { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 } // 옵션
+        );
+    } else {
+        alert("브라우저가 Geolocation을 지원하지 않습니다.");
+    }
+};
+// 컴포넌트 마운트 시 위치 정보 요청
+useEffect(() => {
+    getCurrentLocation();
+}, []);
 
   // 즐겨찾기 목록 항목 클릭 시 지도 위치로 이동하는 함수
   const handleGoToFavorite = (position) => {
@@ -409,6 +453,29 @@ const handleOpenFavorites = () => {
         setCenterPosition(station.position);
         // 검색 결과를 숨기거나, 필요하다면 검색 결과 리스트를 닫는 추가 로직 구현 가능
     };
+    // 근처 대여소 찾기 useEffect
+  useEffect(() => {
+      // isNearbySearchActive 상태가 true이고, 사용자 위치와 대여소 데이터가 있을 때만 실행
+      if (isNearbySearchActive && userLocation && stations.length > 0) {
+          const [userLat, userLon] = userLocation;
+          
+          const nearby = stations
+              .map(station => {
+                  const [stationLat, stationLon] = station.position;
+                  // getDistance 함수는 MapComponent 밖에 정의되어 있어야 함
+                  const distance = getDistance(userLat, userLon, stationLat, stationLon); 
+                  
+                  return { ...station, distance: distance };
+              })
+              .filter(station => station.distance <= SEARCH_RADIUS)
+              .sort((a, b) => a.distance - b.distance); // 거리가 가까운 순으로 정렬
+          
+          setNearbyStations(nearby);
+      } else if (!isNearbySearchActive) {
+          setNearbyStations([]);
+      }
+  }, [isNearbySearchActive, userLocation, stations, SEARCH_RADIUS]); // 의존성 배열에 isNearbySearchActive 추가
+
   return (
     <div className="map-container">
       {activeTab === 'map' && (
@@ -428,6 +495,17 @@ const handleOpenFavorites = () => {
                 />
                   {/*검색버튼*/}
                   <button className="search-button" onClick={handleSearch}>검색</button>
+        <button 
+          onClick={handleNearbySearch}
+            style={{
+            backgroundColor: isNearbySearchActive ? '#dc3545' : '#17a2b8', // 활성화/비활성화 시 색상 변경
+            marginLeft: '5px',
+            color: 'white'
+            }}
+            >
+            {isNearbySearchActive ? '검색 종료' : '근처 대여소'}
+        </button>
+
         </div>
       </header>)}
 
@@ -464,6 +542,48 @@ const handleOpenFavorites = () => {
           {/* 검색 후 지도이동 */}
           <MapSearchCenterer position={centerPosition} />
 
+          {/* 유저 위치 마커 */}
+          {userLocation && (
+              <Marker position={userLocation} icon={new L.divIcon({ 
+                  className: 'user-location-icon', // 위에서 정의한 CSS 클래스
+                  html: '<i class="fa fa-user"></i>', // Font Awesome 아이콘을 HTML로 삽입 (FaUser 아이콘의 CSS 클래스에 맞게 조정 필요)
+                  iconAnchor: [15, 15], // 마커 중심을 아이콘 중앙에 맞춤 (30px/2)
+                  popupAnchor: [0, -15], // 팝업 위치 조정 (30px/2)
+              })}>
+                  <Popup>
+                      <b>현재 내 위치</b>
+                      <br />
+                      <FaUser style={{ verticalAlign: 'middle', marginRight: '5px' }} />
+                  </Popup>
+              </Marker>
+          )}
+          {/* 근처 대여소 찾는 로직 */}
+          {isNearbySearchActive && userLocation && nearbyStations.length > 0 && (
+            <div className="nearby-stations-list" style={{ padding: '15px', background: '#fff', borderTop: '1px solid #ddd', zIndex: 1000, position: 'relative' }}>
+                <h3>⭐ 근처 대여소 ({SEARCH_RADIUS}km 이내 {nearbyStations.length}개)</h3>
+                <ul>
+                    {nearbyStations.map(station => (
+                        <li 
+                            key={station.station_id} 
+                            // 클릭 시 해당 위치로 지도 이동 후, 근처 찾기 모드 종료
+                            onClick={() => { 
+                                setCenterPosition(station.position);
+                                setIsNearbySearchActive(false); 
+                            }} 
+                            style={{ cursor: 'pointer', marginBottom: '5px', listStyle: 'none' }}
+                        >
+                            **{station.name}** ({station.distance.toFixed(2)} km)
+                        </li>
+                    ))}
+                </ul>
+            </div>
+        )}
+          {/* userLocation이 있지만 대여소가 없을 때 메시지 추가 */}
+          {isNearbySearchActive && userLocation && nearbyStations.length === 0 && (
+              <div style={{ padding: '15px', background: '#fff', borderTop: '1px solid #ddd', zIndex: 1000, position: 'relative', color: '#dc3545' }}>
+                  <p>⚠️ {SEARCH_RADIUS}km 이내에 대여소를 찾을 수 없습니다.</p>
+              </div>
+          )}
           {stations.map((station) => (
             <Marker key={station.station_id} position={station.position}>
               <Popup>
