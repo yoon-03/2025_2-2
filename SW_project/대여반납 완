@@ -66,19 +66,20 @@ const MapComponent = () => {
   const [userLocation, setUserLocation] = useState(null);
   //근처 대여소 표시를 위해 추가
   const [nearbyStations, setNearbyStations] = useState([]);
+  // --- JWT 인증 상태 ---
+  const [userToken, setUserToken] = useState(localStorage.getItem('userToken'));
+  const [userInfo, setUserInfo] = useState(null); 
+  const isLoggedIn = !!userToken;
+
+ // 대여소 상세 및 대여 상태 관리
+  const [selectedStationId, setSelectedStationId] = useState(null); // 목록을 보여줄 대여소 ID
+  const [currentRentedUmbrellaId, setCurrentRentedUmbrellaId] = useState(null); // 현재 대여 중인 우산 ID
+  const isReturnMode = !!currentRentedUmbrellaId; 
+  const [availableUmbrella, setAvailableUmbrella] = useState([]); // 대여소별 가용 우산 목록
 
     // ✅ 근처 대여소 검색 활성화 상태 추가 (버튼 토글용)
   const [isNearbySearchActive, setIsNearbySearchActive] = useState(false); 
   const SEARCH_RADIUS = 2; // km
-
-  // ✅ 대여/반납 기능 상태 추가
-    const [isRentalModalOpen, setIsRentalModalOpen] = useState(false); // 모달 열림/닫힘
-    const [umbrellaIdInput, setUmbrellaIdInput] = useState(''); // 우산 ID 입력값
-    const [currentStationForRental, setCurrentStationForRental] = useState(null); // 현재 선택된 대여소 정보
-    // ✅ 현재 사용자의 대여 중인 우산 ID (null이면 대여 중 아님)
-    const [currentRentedUmbrellaId, setCurrentRentedUmbrellaId] = useState(null); 
-    // ✅ 대여/반납 모드 (true: 반납 모드, false: 대여 모드)
-    const isReturnMode = !!currentRentedUmbrellaId; 
 
   const toggleDeleteMode = () => {
     setIsDeleteMode(prev => !prev);
@@ -135,99 +136,6 @@ const handleNearbySearch = () => {
     }
 };
 
-const handleRentUmbrella = async () => {
-    if (!isLoggedIn) {
-        alert("로그인 후 이용 가능합니다.");
-        return;
-    }
-
-    if (!currentStationForRental || !umbrellaIdInput.trim()) {
-        alert("대여소와 우산 ID를 확인해주세요.");
-        return;
-    }
-
-    const stationId = currentStationForRental.station_id;
-    const umbrellaId = umbrellaIdInput.trim();
-
-    if (!window.confirm(`[${currentStationForRental.name}]에서 우산 ID: ${umbrellaId}를 대여하시겠습니까?`)) {
-        return;
-    }
-
-    try {
-        const res = await fetch(`${BACKEND_URL}/api/rental/rent`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${userToken}`,
-            },
-            body: JSON.stringify({ station_id: stationId, umbrella_id: umbrellaId }),
-        });
-
-        const data = await res.json();
-        if (res.ok) {
-            alert(`대여 성공! 우산 ID: ${umbrellaId}`);
-            setIsRentalModalOpen(false);
-            setUmbrellaIdInput('');
-            // ✅ 상태 업데이트를 위해 사용자 정보를 다시 불러옵니다.
-            fetchUserInfo(); 
-        } else {
-            alert(`대여 실패: ${data.error || '알 수 없는 오류'}`);
-        }
-    } catch (error) {
-        console.error('Rental error:', error);
-        alert("서버 통신 오류");
-    }
-};
-
-
-const handleReturnUmbrella = async () => {
-    if (!isLoggedIn) {
-        alert("로그인 후 이용 가능합니다.");
-        return;
-    }
-
-    if (!currentStationForRental || !umbrellaIdInput.trim()) {
-        alert("반납할 대여소와 우산 ID를 확인해주세요.");
-        return;
-    }
-
-    const stationId = currentStationForRental.station_id;
-    const umbrellaId = umbrellaIdInput.trim();
-
-    if (!window.confirm(`[${currentStationForRental.name}]에 우산 ID: ${umbrellaId}를 반납하시겠습니까?`)) {
-        return;
-    }
-
-    try {
-        const res = await fetch(`${BACKEND_URL}/api/rental/return`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${userToken}`,
-            },
-            body: JSON.stringify({ station_id: stationId, umbrella_id: umbrellaId }),
-        });
-
-        const data = await res.json();
-        if (res.ok) {
-            alert(`반납 성공! 우산 ID: ${umbrellaId}`);
-            setIsRentalModalOpen(false);
-            setUmbrellaIdInput('');
-            // ✅ 상태 업데이트를 위해 사용자 정보를 다시 불러옵니다.
-            fetchUserInfo(); 
-        } else {
-            alert(`반납 실패: ${data.error || '알 수 없는 오류'}`);
-        }
-    } catch (error) {
-        console.error('Return error:', error);
-        alert("서버 통신 오류");
-    }
-};
-
-  // --- JWT 인증 상태 ---
-  const [userToken, setUserToken] = useState(localStorage.getItem('userToken'));
-  const [userInfo, setUserInfo] = useState(null); 
-  const isLoggedIn = !!userToken;
   
   // 인증 폼 상태
   const [isSignup, setIsSignup] = useState(false); 
@@ -243,32 +151,39 @@ const handleReturnUmbrella = async () => {
   });
   const [authError, setAuthError] = useState('');
   
-  const handleLogout = () => {
-      localStorage.removeItem('userToken');
-      setUserToken(null);
-      setUserInfo(null);
-      setAuthError('로그아웃되었습니다.');
-      alert('로그아웃되었습니다.');
+ const handleLogout = useCallback(() => {
+    localStorage.removeItem('userToken');
+    setUserToken(null);
+    setUserInfo(null);
+    setCurrentRentedUmbrellaId(null); 
+    setAuthError('로그아웃되었습니다.');
+    alert('로그아웃되었습니다.');
+}, [setUserToken, setUserInfo, setAuthError, setCurrentRentedUmbrellaId]);
+
+
+  const handleAuthRedirect = () => {
+  setAuthError('대여 및 반납은 로그인 후 이용 가능합니다.');
+  setActiveTab('my');
   };
 
   // 사용자 정보 가져오기
   const fetchUserInfo = useCallback(async () => {
     try {
-      const response = await fetch(`${BACKEND_URL}/api/user`, {
-        headers: { 'Authorization': `Bearer ${userToken}` },
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setUserInfo(data);
-        setCurrentRentedUmbrellaId(data.current_rental_id || null);
-      } else {
-        handleLogout(); // 토큰 만료 등 오류 시 로그아웃
-      }
+        const response = await fetch(`${BACKEND_URL}/api/user`, {
+            headers: { 'Authorization': `Bearer ${userToken}` },
+        });
+        if (response.ok) {
+            const data = await response.json();
+            setUserInfo(data);
+            setCurrentRentedUmbrellaId(data.current_rental_id || null);
+        } else {
+            handleLogout(); // 👈 useCallback으로 감싸진 handleLogout 호출
+        }
     } catch (error) {
-      console.error('Failed to fetch user info:', error);
-      handleLogout();
+        console.error('Failed to fetch user info:', error);
+        handleLogout(); // 👈 useCallback으로 감싸진 handleLogout 호출
     }
-  }, [userToken, handleLogout]);
+}, [userToken, handleLogout]);
 
   // 즐겨찾기 목록 가져오기
   const fetchFavorites = useCallback(async () => {
@@ -508,6 +423,151 @@ useEffect(() => {
       }
   };
 
+const handleCenterButtonClick = () => {
+    if (activeTab === 'map') {
+        // 중앙 버튼은 대여소를 선택하지 않으므로 null을 전달 (QR 스캔 모드)
+        navigateToRentalPage(null); 
+    } else {
+        setActiveTab('map'); // 다른 탭에서는 지도 화면으로 복귀
+    }
+};
+
+  const handleReturnUmbrella = async (stationId, umbrellaId) => {
+    if (!stationId || !umbrellaId) {
+        alert("반납할 대여소와 우산 정보가 올바르지 않습니다.");
+        return;
+    }
+
+    if (!window.confirm(`${stationId}번 대여소에 우산(${umbrellaId})을 반납하시겠습니까?`)) {
+        return;
+    }
+
+    try {
+        // 1. 서버로 반납 요청 전송 (POST)
+        const res = await fetch(`${BACKEND_URL}/api/rental/return`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${userToken}`, // 토큰 필수
+            },
+            body: JSON.stringify({
+                station_id: stationId, // 백엔드가 받는 키 이름: station_id
+                umbrella_id: umbrellaId, // 백엔드가 받는 키 이름: umbrella_id
+            }),
+        });
+
+        const data = await res.json();
+
+        if (res.ok) {
+            // 2. 성공 시 처리
+            alert("반납이 완료되었습니다!");
+            
+            // 상태 초기화 (반납 모드 해제)
+            setCurrentRentedUmbrellaId(null); 
+            setSelectedStationId(null);
+            setActiveTab('map'); // 지도로 복귀
+            
+            // 최신 유저 정보(대여 상태 등) 갱신
+            fetchUserInfo(); 
+            
+            // 만약 현재 보고 있는 대여소의 우산 목록도 갱신하고 싶다면:
+            // fetchAvailableUmbrella(stationId); 
+        } else {
+            // 3. 실패 시 에러 메시지 출력
+            alert(data.error || "반납 처리에 실패했습니다.");
+        }
+    } catch (error) {
+        console.error("Return request error:", error);
+        alert("서버 통신 중 오류가 발생했습니다.");
+    }
+};
+  
+  const handleRentUmbrella = async (stationId, umbrellaId) => {
+    if (!stationId || !umbrellaId) return;
+
+    // 사용자 확인
+    if (!window.confirm(`${stationId} 대여소에서 우산(${umbrellaId})을 대여하시겠습니까?`)) {
+        return;
+    }
+
+    try {
+        // 1. 서버로 대여 요청 전송 (POST)
+        const res = await fetch(`${BACKEND_URL}/api/rental/rent`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${userToken}` // 로그인 토큰 필수
+            },
+            body: JSON.stringify({ 
+                station_id: stationId, 
+                umbrella_id: umbrellaId 
+            })
+        });
+
+        const data = await res.json();
+
+        if (res.ok) {
+            // 2. 성공 시 처리
+            alert('대여가 성공적으로 완료되었습니다!');
+            
+            // 상태 업데이트 (대여 중 상태로 변경)
+            setCurrentRentedUmbrellaId(umbrellaId); 
+            setSelectedStationId(null);
+            setActiveTab('map'); // 지도로 이동
+            
+            // 최신 유저 정보(대여 정보) 다시 불러오기
+            fetchUserInfo(); 
+        } else {
+            // 3. 실패 시 에러 메시지
+            alert(data.error || '대여 처리에 실패했습니다.');
+        }
+    } catch (error) {
+        console.error('Rent request error:', error);
+        alert('서버와 통신 중 오류가 발생했습니다.');
+    }
+};
+
+
+  // 대여소의 가용 우산 목록을 가져오는 함수
+  const fetchAvailableUmbrella = async (stationId) => {
+
+    if (!stationId || !userToken) {
+        console.error("❌ ID 또는 토큰이 없어서 중단합니다.");
+        return;
+    }
+
+    try {
+        const res = await fetch(`${BACKEND_URL}/api/stations/${stationId}/umbrella`, {
+            headers: { Authorization: `Bearer ${userToken}` },
+        });
+        
+        if (res.ok) {
+            const data = await res.json();
+            setAvailableUmbrella(data);
+        } else {
+            console.error("❌  서버 응답 에러 (200 아님)");
+            setAvailableUmbrella([]);
+        }
+    } catch (error) {
+        console.error('❌  네트워크/코드 에러 발생:', error);
+    }
+};
+  const navigateToRentalPage = (stationId) => {
+   if (!isLoggedIn) {
+      handleAuthRedirect(); // 로그인 없으면 MY 탭으로 이동
+      return;
+    }
+
+  setSelectedStationId(stationId);
+    
+  if (!isReturnMode) {
+      // 대여 모드일 경우에만 목록 조회 API 호출
+      fetchAvailableUmbrella(stationId); 
+    }
+    
+    setActiveTab('rental'); // 렌탈 페이지로 화면 전환
+  };
+
   //검색 버튼 핸들러
     const handleSearch = async () => {
         if (!searchTerm.trim()) {
@@ -684,41 +744,29 @@ useEffect(() => {
           {stations.map((station) => (
             <Marker key={station.station_id} position={station.position}>
               <Popup>
-                <b>{station.name}</b>
-                <br/>
-                {station.location}
-                <br />
-                {station.region}동
-                <br />
-                <button onClick={() => handleAddFavorite(station)}>
-                    즐겨찾기 추가 (DB)
-                </button>
-                <button
-                    onClick={() => {
-                        setCurrentStationForRental(station); // 해당 마커의 대여소 ID 설정
-                        
-                        // ✅ 대여 상태에 따라 입력값 설정
-                        if (currentRentedUmbrellaId) {
-                            setUmbrellaIdInput(currentRentedUmbrellaId); // 대여 중인 우산 ID로 미리 설정
-                        } else {
-                            setUmbrellaIdInput(''); // 입력값 초기화
-                        }
-                        
-                        setIsRentalModalOpen(true); // 모달 열기
-                    }}
-                    // ✅ 버튼 텍스트와 색상을 대여/반납 모드에 따라 동적으로 변경
-                    style={{ 
-                        marginTop: '5px', 
-                        // isReturnMode 상태는 MapComponent 상단에 정의되어 있어야 합니다.
-                        background: isReturnMode ? '#dc3545' : '#28a745', 
-                        color: 'white' 
-                    }}
-                >
-                    {isReturnMode ? '반납하기' : '대여하기'} 
-                </button>
-              </Popup>
-           </Marker>
-          ))}
+                  {station.name}
+                  <br></br>
+                  {station.location}  
+                  <br />
+                  <button onClick={() => handleAddFavorite(station)}>
+                      즐겨찾기 추가
+                  </button>
+
+                  {/* 대여/반납 버튼 */}
+                  <button
+                      onClick={() => navigateToRentalPage(station.station_id)}
+                      style={{
+                          marginTop: '5px',
+                          background: isReturnMode ? '#dc3545' : '#28a745',
+                          color: 'white'
+                      }}
+                  >
+                      {isReturnMode ? '반납하기' : '대여/목록 보기'}
+                  </button>
+                </Popup>
+              </Marker>
+))}
+
         </MapContainer>
       )}
 
@@ -916,6 +964,58 @@ useEffect(() => {
         </div>
       )}
 
+      {activeTab === 'rental' && (
+         <div className='rental-page'>
+          <h2>{isReturnMode ? '우산 반납하기' : '우산 대여하기'}</h2>
+          
+          <p>
+            {isReturnMode ? 
+              `현재 대여 중: ${currentRentedUmbrellaId}` : 
+              `대여소: ${selectedStationId || 'QR 스캔 모드'}`
+            }
+          </p>
+          
+          {/* 목록 표시 */}
+          {!isReturnMode && availableUmbrella.length > 0 && (
+            <div style={{marginTop: '20px'}}>
+              <h3>대여 가능한 우산 ({availableUmbrella.length}개)</h3>
+              <ul style={{listStyle: 'none', padding: 0}}>
+                {availableUmbrella.map(umbrella => (
+                  <li 
+                    key={umbrella.umbrella_id} 
+                    style={{padding: '10px', borderBottom: '1px solid #eee', cursor: 'pointer'}}
+                  >
+                    우산 ID: {umbrella.umbrella_id}
+                    <button 
+                        onClick={() => handleRentUmbrella(selectedStationId, umbrella.umbrella_id)} 
+                        style={{float: 'right', padding: '5px', backgroundColor: '#28a745', color: 'white', border: 'none', borderRadius: '5px'}}
+                    >
+                        대여 선택
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          
+          {/* 반납 버튼 (반납 모드 시 활성화) */}
+          {isReturnMode && (
+            <button 
+              className="action-button primary" 
+              onClick={() => handleReturnUmbrella(selectedStationId, currentRentedUmbrellaId)} 
+              style={{marginTop: '30px', backgroundColor: '#dc3545'}}
+            >
+               우산 반납 실행 ({currentRentedUmbrellaId})
+             </button>
+          )}
+
+          {/* 대여 가능 우산이 없을 때 */}
+          {!isReturnMode && availableUmbrella.length === 0 && (
+            <p style={{color: 'red', marginTop: '20px'}}>현재 이 대여소에 대여 가능한 우산이 없습니다.</p>
+          )}
+        </div>
+       )}
+
       <footer className="footer">
         {/* 하단 버튼 4개 (중앙 버튼 자리 비움) */}
         <div className="nav-buttons">
@@ -938,108 +1038,543 @@ useEffect(() => {
       
       {/* ✅ 중앙 고정 버튼 (Footer 밖, map-container 안에 위치) */}
       <div className="center-button-wrapper">
-        <button
-            className="center-round-button"
-              onClick={() => {
-                  if (activeTab === 'map') {
-                      // 'map' 탭일 때: 대여/반납 모달을 엽니다.
-                      setCurrentStationForRental(null); // QR 코드는 대여소를 지정하지 않고 사용
-                      
-                      // 대여 상태에 따라 입력값 미리 설정
-                      if (currentRentedUmbrellaId) {
-                          // 대여 중이면: 반납할 우산 ID를 미리 설정
-                          setUmbrellaIdInput(currentRentedUmbrellaId); 
-                      } else {
-                          // 대여 중이 아니면: 입력값 초기화
-                          setUmbrellaIdInput('');
-                      }
-                      
-                      setIsRentalModalOpen(true); 
-                  } else {
-                      // 다른 탭일 때: 'map' 탭으로 돌아갑니다.
-                      setActiveTab('map');
-                  }
-              }}
+          <button 
+            className="center-round-button" 
+            onClick={handleCenterButtonClick}
           >
-              {activeTab === 'map' ? (
-                  <FaQrcode style={{fontSize: '32px', color: '#fff'}} />
-              ) : (
-                  <FaHome style={{fontSize: '32px', color: '#fff'}} />
+            {activeTab === 'map' ? (
+                <FaQrcode style={{fontSize: '32px', color: '#fff'}} />
+            ) : (
+                <FaHome style={{fontSize: '32px', color: '#fff'}} />
             )}
-        </button>
+          </button>
       </div>
-      <RentalModal
-          isOpen={isRentalModalOpen}
-          onClose={() => {
-              setIsRentalModalOpen(false);
-              setUmbrellaIdInput('');
-              setCurrentStationForRental(null);
-          }}
-          station={currentStationForRental}
-          umbrellaId={umbrellaIdInput}
-          setUmbrellaId={setUmbrellaIdInput}
-          handleRent={handleRentUmbrella}
-          handleReturn={handleReturnUmbrella}
-          isReturnMode={isReturnMode} // ✅ isReturnMode prop 전달
-      />
-      
-    </div> // <-- <div className="map-container"> 닫는 태그
+    </div>
   );
 };
-// 대여/반납 모달 컴포넌트
-const RentalModal = ({ isOpen, onClose, station, umbrellaId, setUmbrellaId, handleRent, handleReturn, isReturnMode }) => { 
-    if (!isOpen) return null;
-    
-    // 모달 제목을 동적으로 변경
-    const title = isReturnMode ? '우산 반납하기' : '우산 대여하기'; 
-    const color = isReturnMode ? '#dc3545' : '#007bff';
-    const actionHandler = isReturnMode ? handleReturn : handleRent;
-    const actionText = isReturnMode ? '반납 완료' : '대여 완료';
-    const isStationSelected = !!station;
-    
-    return (
-        <div className="modal-overlay" onClick={onClose}>
-            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-                <h3 style={{color: color}}>{title}</h3>
-                
-                {isStationSelected ? (
-                    <p>선택된 대여소: <strong>{station.name}</strong></p>
-                ) : (
-                    <p style={{ color: color }}>
-                        ⚠️ {isReturnMode ? '반납할 대여소' : '대여할 대여소'}를 마커 팝업에서 선택해 주세요.
-                    </p>
-                )}
 
-                <input
-                    type="text"
-                    placeholder="우산 QR 코드 (ID) 입력"
-                    value={umbrellaId}
-                    onChange={(e) => setUmbrellaId(e.target.value)}
-                    className="login-input"
-                    style={{ marginTop: '10px' }}
-                />
+export default MapComponent; 프론트엔드
 
-                <div style={{ display: 'flex', justifyContent: 'center', marginTop: '15px' }}>
-                    <button
-                        className="action-button primary"
-                        onClick={actionHandler}
-                        disabled={!umbrellaId || (!isReturnMode && !isStationSelected)} 
-                        style={{ width: '100%', background: color }}
-                    >
-                        {actionText}
-                    </button>
-                </div>
-                
-                <button
-                    className="action-button"
-                    onClick={onClose}
-                    style={{ marginTop: '10px', background: '#6c757d' }}
-                >
-                    닫기
-                </button>
-            </div>
-        </div>
-    );
+// server.js
+
+// 1. 환경 변수 로드
+require('dotenv').config();
+
+// 2. 패키지 로드
+const express = require('express');
+const mysql = require('mysql2');
+const app = express();
+const port = 4000;
+const cors = require('cors');
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcrypt');
+
+// ✅ JSON 파싱
+app.use(express.json());
+
+app.use(cors({
+    origin: 'http://localhost:3000',
+    credentials: true
+}));
+
+// ✅ MySQL Pool
+const db = mysql.createPool({
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_DATABASE,
+    port: process.env.DB_PORT,
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
+});
+
+// ✅ 연결 테스트
+db.getConnection((err, conn) => {
+    if (err) {
+        console.error('MySQL 연결 실패:', err.message);
+        return;
+    }
+    console.log('✅ MySQL 연결 성공!');
+    conn.release();
+});
+
+app.get('/', (req, res) => {
+    res.send('API Server is running.');
+});
+
+
+// ✅ JWT 인증 미들웨어
+const authenticateToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+
+    if (!token) {
+        return res.status(401).json({ error: '인증 토큰이 누락되었습니다.' });
+    }
+    jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+        if (err) {
+            return res.status(403).json({ error: '토큰이 유효하지 않거나 만료되었습니다.' });
+        }
+
+        req.userId = user.id; // ✅ user_id가 들어있음
+        next();
+    });
 };
 
-export default MapComponent;
+
+// ✅ 회원가입 라우트
+app.post('/api/auth/signup', (req, res) => {
+    const { email, password, phonenumber, nickname } = req.body;
+
+    if (!email || !password) {
+        return res.status(400).json({ error: '필수 정보를 입력해주세요.' });
+    }
+
+    bcrypt.hash(password, 10, (err, hashedPassword) => {
+        if (err) {
+            console.error('Hash Error:', err);
+            return res.status(500).json({ error: '비밀번호 해싱 오류' });
+        }
+
+        const insertQuery = `
+            INSERT INTO user (user_id, password, nickname, phonenumber, email)
+            VALUES (?, ?, ?, ?, ?)
+        `;
+
+        db.query(insertQuery, [email, hashedPassword, nickname, phonenumber, email], (err) => {
+            if (err) {
+                if (err.errno === 1062) {
+                    return res.status(409).json({ error: '이미 존재하는 사용자입니다.' });
+                }
+                console.error('Signup DB Error:', err);
+                return res.status(500).json({ error: '회원가입 중 DB 오류' });
+            }
+
+            // ✅ 실제 JWT 생성
+            const token = jwt.sign(
+                { id: email }, 
+                process.env.JWT_SECRET, 
+                { expiresIn: '1h' }
+            );
+
+            res.status(201).json({
+                message: '회원가입 성공',
+                token: token
+            });
+        });
+    });
+});
+
+// ✅ 즐겨찾기
+app.post('/api/favorites', authenticateToken, (req, res) => {
+    const userId = req.userId;   // JWT에서 추출한 user_id
+    const { station_id } = req.body;
+
+    if (!station_id) {
+        return res.status(400).json({ error: "station_id가 필요합니다." });
+    }
+
+    const query = `
+        INSERT INTO bookmark (user_id, station_id)
+        VALUES (?, ?)
+    `;
+
+    db.query(query, [userId, station_id], (err) => {
+        if (err) {
+            if (err.errno === 1062) {
+                return res.status(409).json({ error: "이미 즐겨찾기에 추가된 대여소입니다." });
+            }
+            console.error("즐겨찾기 추가 DB 오류:", err);
+            return res.status(500).json({ error: "즐겨찾기 추가 중 오류 발생" });
+        }
+
+        res.json({ message: "즐겨찾기에 추가되었습니다." });
+    });
+});
+
+
+// ✅ 즐겨찾기 정보 가져오기
+app.get('/api/favorites', authenticateToken, (req, res) => {
+    const userId = req.userId;
+
+    const query = `
+        SELECT 
+            b.station_id,
+            s.name AS station_name,
+            s.lat AS latitude,
+            s.lng AS longitude
+        FROM bookmark b
+        JOIN station s ON b.station_id = s.station_id
+        WHERE b.user_id = ?
+    `;
+
+    db.query(query, [userId], (err, results) => {
+        if (err) {
+            console.error("즐겨찾기 조회 오류:", err);
+            return res.status(500).json({ error: "즐겨찾기 조회 실패" });
+        }
+        res.json(results);
+    });
+});
+
+// ✅ 로그인 라우트
+app.post('/api/auth/login', (req, res) => {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+        return res.status(400).json({ error: '아이디와 비밀번호를 입력해주세요.' });
+    }
+
+    const query = `
+        SELECT user_id, password
+        FROM user
+        WHERE user_id = ?
+    `;
+
+    db.query(query, [email], async (err, results) => {
+        if (err) {
+            console.error('Login DB Error:', err.message);
+            return res.status(500).json({ error: '로그인 DB 오류' });
+        }
+
+        if (results.length === 0) {
+            return res.status(401).json({ error: '존재하지 않는 계정입니다.' });
+        }
+
+        const user = results[0];
+
+        // ✅ 비밀번호 비교
+        const isMatch = await bcrypt.compare(password, user.password);
+
+        if (!isMatch) {
+            return res.status(401).json({ error: '비밀번호가 일치하지 않습니다.' });
+        }
+
+        // ✅ 정상 JWT 발급 (user.user_id 사용)
+        const token = jwt.sign(
+            { id: user.user_id }, 
+            process.env.JWT_SECRET,
+            { expiresIn: '1h' }
+        );
+
+        res.json({
+            message: '로그인 성공',
+            token: token
+        });
+    });
+});
+
+
+// ✅ 사용자 정보 조회
+app.get('/api/user', authenticateToken, (req, res) => {
+    const userId = req.userId;
+
+    const query = `
+        SELECT 
+            u.email, 
+            u.nickname, 
+            u.phonenumber,
+            -- ✅ 대여 중인 우산 ID를 조회하여 current_rental_id로 반환
+            (SELECT umbrella_id FROM umbrella_rental_service 
+             WHERE user_id = u.user_id AND return_time IS NULL 
+             ORDER BY rent_time DESC LIMIT 1) AS current_rental_id
+        FROM user u
+        WHERE u.user_id = ?
+    `;
+
+    db.query(query, [userId], (err, results) => {
+        if (err) {
+            console.error('User Fetch Error:', err);
+            return res.status(500).json({ error: '사용자 조회 오류' });
+        }
+
+        if (results.length === 0) {
+            return res.status(404).json({ error: '사용자를 찾을 수 없습니다.' });
+        }
+
+        const user = results[0];
+
+        res.json({
+            email: user.email,
+            nickname: user.nickname || '익명 사용자',
+            phonenumber: user.phonenumber,
+            current_rental_id: user.current_rental_id
+        });
+    });
+});
+
+
+// ✅ 대여소 조회
+app.get('/api/stations', (req, res) => {
+    const region = req.query.region; // 쿼리 파라미터에서 region 값을 추출
+    
+    let query = 'SELECT * FROM station';
+    let params = [];
+
+    // region 값이 있을 경우 WHERE 절 추가
+    if (region) {
+        //  일치하는 지역을 찾습니다.
+        query += ' WHERE region = ?';
+        params.push(region);
+    }
+    
+    // ✅ 쿼리 실행
+    db.query(query, params, (err, results) => {
+        if (err) {
+            console.error('Station Fetch DB Error:', err); 
+            return res.status(500).json({ error: 'DB 조회 오류' });
+        }
+         res.json(results);
+    });
+});
+
+// ✅ 즐겨찾기 삭제 (DELETE)
+app.delete('/api/favorites', authenticateToken, (req, res) => {
+    const userId = req.userId; // JWT에서 추출한 user_id
+    // DELETE 요청은 쿼리 파라미터를 이용해서
+    const station_id = req.query.station_id ? req.query.station_id.trim() : null;
+    // 1. station_id 누락 여부 확인 (클라이언트 측 오류 방지)
+    if (!station_id) {
+        return res.status(400).json({ error: "station_id가 필요합니다." });
+    }
+
+    const deleteQuery = `
+        DELETE FROM bookmark 
+        WHERE user_id = ? AND station_id = ?
+    `;
+
+    // 2. DB 삭제 쿼리 실행
+    db.query(deleteQuery, [userId, station_id], (err, result) => {
+        if (err) {
+            console.error("즐겨찾기 삭제 DB 오류:", err);
+            return res.status(500).json({ error: "즐겨찾기 삭제 중 오류 발생" });
+        }
+
+        // 3. 삭제 결과 확인
+        if (result.affectedRows === 0) {
+            // 삭제할 항목이 없는 경우
+            return res.status(404).json({ error: "해당 즐겨찾기 항목을 찾을 수 없습니다." });
+        }
+
+        // 4. 성공 응답
+        res.json({ message: "즐겨찾기에서 삭제되었습니다." });
+
+        
+    });
+});
+// ✅ 우산 대여 라우트
+app.post('/api/rental/rent', authenticateToken, async (req, res) => { // 1. async 추가
+    const userId = req.userId;
+    const { station_id, umbrella_id } = req.body;
+
+    if (!station_id || !umbrella_id) {
+        return res.status(400).json({ error: '대여소 ID와 우산 ID가 필요합니다.' });
+    }
+
+    let connection; // 연결 객체를 밖에 선언
+
+    try {
+        // 2. 콜백 없이 await로 연결 가져오기 (여기가 핵심!)
+        connection = await db.promise().getConnection(); 
+
+        // 3. 트랜잭션 시작 (콜백 없음, await로 대기)
+        await connection.beginTransaction();
+
+        // ---------------- 로직 시작 ----------------
+        
+        // 4. 우산 상태 확인
+        // (이미 connection이 promise 용이므로 .promise() 안 붙여도 됨, 하지만 붙여도 상관없음)
+        const [checkResults] = await connection.query(
+            `SELECT status, station_id FROM umbrella WHERE umbrella_id = ? FOR UPDATE`, 
+            [umbrella_id]
+        );
+
+        if (checkResults.length === 0) {
+            throw new Error('우산을 찾을 수 없습니다.');
+        }
+
+        const currentStatus = checkResults[0].status;
+
+        if (currentStatus !== 'available') {
+            throw new Error('이미 대여 중이거나 사용 불가능한 우산입니다.');
+        }
+        
+        // 5. 우산 정보 업데이트
+        const updateUmbrellaQuery = `
+            UPDATE umbrella
+            SET status = 'rented', station_id = NULL, last_user_id = ?
+            WHERE umbrella_id = ? AND station_id = ?
+        `;
+        const [updateResult] = await connection.query(
+            updateUmbrellaQuery, 
+            [userId, umbrella_id, station_id]
+        );
+
+        if (updateResult.affectedRows === 0) {
+            throw new Error('우산 상태 변경에 실패했습니다. 이미 대여되었을 수 있습니다.');
+        }
+
+        // 6. 대여 이력 추가
+        // (rent_id는 AUTO_INCREMENT이므로 컬럼 명시에서 제외)
+        const insertHistoryQuery = `
+            INSERT INTO umbrella_rental_service 
+            (user_id, station_id, umbrella_id, rent_time, return_time)
+            VALUES (?, ?, ?, NOW(), NULL)
+        `;
+        await connection.query(
+            insertHistoryQuery, 
+            [userId, station_id, umbrella_id]
+        );
+
+        // ---------------- 로직 끝 ----------------
+
+        // 7. 커밋 (await 사용 가능)
+        await connection.commit();
+        
+        res.json({ message: '우산 대여 성공' });
+
+    } catch (error) {
+        // 8. 롤백 및 에러 처리
+        if (connection) {
+            await connection.rollback();
+        }
+        console.error('Rent Transaction Error:', error.message);
+        res.status(400).json({ error: error.message });
+    } finally {
+        // 9. 연결 해제
+        if (connection) connection.release();
+    }
+});
+
+// ✅ 대여소별 대여 가능한 우산 조회 라우트
+app.get('/api/stations/:station_id/umbrella', authenticateToken, (req, res) => {
+    const { station_id } = req.params; // ✅ URL에서 station_id 추출
+
+    console.log(`🔎 [요청 확인] Station ID: '${station_id}'`);
+
+    const query = `
+        SELECT 
+            umbrella_id, 
+            status, 
+            last_user_id 
+        FROM umbrella 
+        WHERE station_id = ? AND status = 'available'
+    `;
+
+    db.query(query, [station_id], (err, results) => {
+        if (err) {
+            console.error('Available Umbrella Fetch DB Error:', err); 
+            return res.status(500).json({ error: 'DB 조회 오류' });
+        }
+
+        console.log(`✅ [DB 결과] 조회된 우산 개수: ${results.length}개`);
+        res.json(results); // 👈🚨 응답 전송 라인을 추가합니다.
+    });
+});
+
+   app.post('/api/rental/return', authenticateToken, async (req, res) => {
+    const userId = req.userId;
+    const { station_id, umbrella_id } = req.body;
+
+    console.log(`[반납 요청] User: ${userId}, Station: ${station_id}, Umbrella: ${umbrella_id}`);
+
+    if (!station_id || !umbrella_id) {
+        return res.status(400).json({ error: '반납할 대여소 ID와 우산 ID가 필요합니다.' });
+    }
+
+    let connection;
+
+    try {
+        // 1. Promise 기반 연결 가져오기 (핵심 수정 사항)
+        connection = await db.promise().getConnection();
+
+        // 2. 트랜잭션 시작
+        await connection.beginTransaction();
+
+        // ---------------- 로직 시작 ----------------
+
+        // 3. 대여 이력(History) 확인
+        // 가장 최근에 빌린(아직 반납 안 된) 기록 찾기
+        const [rentalCheck] = await connection.query(
+            `SELECT rent_id, user_id 
+             FROM umbrella_rental_service 
+             WHERE umbrella_id = ? AND return_time IS NULL 
+             ORDER BY rent_time DESC LIMIT 1 FOR UPDATE`,
+            [umbrella_id]
+        );
+
+        let rentId = null;
+
+        if (rentalCheck.length > 0) {
+            // ✅ 정상 케이스: 대여 기록이 존재함
+            const rentalRecord = rentalCheck[0];
+            rentId = rentalRecord.rent_id;
+
+            // 4. 이력 테이블 업데이트 (반납 시간, 반납 장소 기록)
+            await connection.query(
+                `UPDATE umbrella_rental_service
+                 SET return_time = NOW(), station_id = ? 
+                 WHERE rent_id = ?`, 
+                [station_id, rentId]
+            );
+        } else {
+            // ⚠️ 예외 케이스: 이력 테이블에는 없는데 반납 요청이 옴
+            console.log("⚠️ 대여 기록 없음. 우산 상태 직접 확인 후 강제 반납 시도...");
+        }
+
+        // 5. 우산 테이블(Umbrella) 상태 확인
+        const [umbrellaCheck] = await connection.query(
+            `SELECT status FROM umbrella WHERE umbrella_id = ? FOR UPDATE`,
+            [umbrella_id]
+        );
+
+        if (umbrellaCheck.length === 0) {
+            throw new Error('존재하지 않는 우산 ID입니다.');
+        }
+
+        const currentStatus = umbrellaCheck[0].status;
+
+        // 이미 반납된 상태라면 에러 처리 (단, 대여 기록 업데이트가 있었으면 성공으로 간주)
+        if (currentStatus === 'available' && !rentId) {
+            throw new Error('이미 반납 처리가 완료된 우산입니다.');
+        }
+
+        // 6. 우산 테이블 업데이트 (상태 available로 변경, 위치 변경)
+        const updateUmbrellaQuery = `
+            UPDATE umbrella
+            SET status = 'available', station_id = ?
+            WHERE umbrella_id = ?
+        `;
+        await connection.query(
+            updateUmbrellaQuery, 
+            [station_id, umbrella_id]
+        );
+
+        // ---------------- 로직 끝 ----------------
+
+        // 7. 커밋
+        await connection.commit();
+
+        console.log(`[반납 완료] 우산 ${umbrella_id} 반납 성공`);
+        res.json({ message: '우산 반납 성공' });
+
+    } catch (error) {
+        // 8. 롤백
+        if (connection) {
+            await connection.rollback();
+        }
+        console.error('[반납 에러]', error.message);
+        res.status(400).json({ error: error.message });
+    } finally {
+        // 9. 연결 해제
+        if (connection) connection.release();
+    }
+});
+
+// ✅ 서버 실행
+app.listen(port, () => {
+    console.log(`🚀 서버가 http://localhost:${port} 에서 실행 중`);
+});
+백엔드
