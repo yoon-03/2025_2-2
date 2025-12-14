@@ -1,0 +1,804 @@
+import React, { useState, useEffect } from 'react';
+import { 
+    View, 
+    Text, 
+    TextInput, 
+    TouchableOpacity, 
+    Alert, 
+    ScrollView,
+    Switch,
+    StyleSheet, // StyleSheet를 사용하기 위해 Import
+    Platform, // 플랫폼별 스타일 처리를 위해 Import
+    BackHandler, // Android 뒤로가기 버튼 처리를 위해 Import
+} from 'react-native';
+
+// ⚠️ 스타일은 이 파일 맨 아래에 통합되었습니다.
+// import { styles } from './styles'; // 이 줄은 제거되었습니다.
+
+import Icon from 'react-native-vector-icons/FontAwesome'; 
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import MapView, { Marker, PROVIDER_GOOGLE, Region } from 'react-native-maps'; 
+
+// --- 상수 및 백엔드 설정 ---
+const BACKEND_URL = 'http://localhost:5000';
+// -----------------
+
+// --- 📝 TypeScript 인터페이스 정의 ---
+
+interface StationPosition {
+    latitude: number;
+    longitude: number;
+}
+
+interface Station {
+    id: number;
+    name: string;
+    position: StationPosition;
+}
+
+interface LoginFormState {
+    email: string;
+    password: string;
+    passwordConfirm: string;
+    phone: string;
+    emailPrefix: string;
+    emailDomain: string;
+    isTwoFactorEnabled: boolean;
+}
+
+interface MapRegion {
+    latitude: number;
+    longitude: number;
+    latitudeDelta: number;
+    longitudeDelta: number;
+}
+
+// 예시 대여소 데이터 (Station 타입 적용)
+const stations: Station[] = [
+    { id: 1, name: '미추홀구 대여소', position: { latitude: 37.45, longitude: 126.65 } },
+    { id: 2, name: '강남역 대여소', position: { latitude: 37.498, longitude: 127.02 } },
+    { id: 3, name: '신도림역 대여소', position: { latitude: 37.508, longitude: 126.88 } },
+];
+
+const initialRegion: MapRegion = {
+    latitude: stations[0].position.latitude,
+    longitude: stations[0].position.longitude,
+    latitudeDelta: 0.0922,
+    longitudeDelta: 0.0421,
+};
+
+// --- 💻 메인 컴포넌트 ---
+
+const MapComponent: React.FC = () => {
+    // 💡 초기 로딩 상태 추가
+    const [isLoading, setIsLoading] = useState(true); 
+    const [mapRegion, setMapRegion] = useState<MapRegion>(initialRegion);
+    const [activeTab, setActiveTab] = useState<string>('map');
+    const [favorites, setFavorites] = useState<Station[]>([]);
+    const [userToken, setUserToken] = useState<string | null>(null);
+    const [userInfo, setUserInfo] = useState<{ email: string } | null>(null); 
+    const isLoggedIn: boolean = !!userToken;
+    
+    const [isSignup, setIsSignup] = useState<boolean>(false); 
+    const [loginForm, setLoginForm] = useState<LoginFormState>({ 
+        email: '',
+        password: '',
+        passwordConfirm: '',
+        phone: '',
+        emailPrefix: '',
+        emailDomain: 'gmail.com',
+        isTwoFactorEnabled: false
+    });
+    const [authError, setAuthError] = useState<string>('');
+
+    // 1. 초기 로딩 (AsyncStorage 로드 및 스플래시 화면 처리)
+    useEffect(() => {
+        const initializeApp = async () => {
+            // AsyncStorage 로드
+            const token = await AsyncStorage.getItem('userToken');
+            setUserToken(token);
+            
+            // 💡 스플래시 화면을 위한 2초 지연 (Resolve 타입 오류 수정 반영)
+            await new Promise<void>(resolve => {
+                setTimeout(() => {
+                    resolve(); 
+                }, 2000); 
+            });
+
+            setIsLoading(false);
+        };
+        initializeApp();
+    }, []);
+    
+    // 2. 토큰 변경 감지 (UserInfo 및 Favorites 로드)
+    useEffect(() => {
+        if (userToken) {
+            fetchUserInfo();
+            fetchFavorites();
+        } else {
+            setUserInfo(null);
+            setFavorites([]);
+        }
+    }, [userToken]);
+
+    // 3. Android 뒤로가기 버튼 처리 (종료 확인 및 탭 복귀)
+    useEffect(() => {
+        const backAction = () => {
+            // 'map' 탭일 때 종료 확인 팝업
+            if (activeTab === 'map') {
+                Alert.alert(
+                    "앱 종료",
+                    "정말로 앱을 종료하시겠습니까?",
+                    [
+                        { text: "취소", onPress: () => null, style: "cancel" },
+                        { text: "종료", onPress: () => BackHandler.exitApp() }
+                    ],
+                    { cancelable: false }
+                );
+                return true; // 기본 동작 방지 (앱 종료)
+            } 
+            
+            // 다른 탭일 때 'map' 탭으로 복귀
+            if (activeTab !== 'map') {
+                setActiveTab('map');
+                return true; // 기본 동작 방지 (탭 복귀)
+            }
+
+            return false; // 그 외 상황 (처리할 것이 없으므로 기본 동작 허용)
+        };
+
+        const backHandler = BackHandler.addEventListener(
+            "hardwareBackPress",
+            backAction
+        );
+
+        return () => backHandler.remove();
+    }, [activeTab]);
+
+    // --- (이하 API & Auth Functions는 변경 없음) ---
+    const handleSetToken = async (token: string) => {
+        await AsyncStorage.setItem('userToken', token);
+        setUserToken(token);
+    };
+
+    const handleRemoveToken = async () => {
+        await AsyncStorage.removeItem('userToken');
+        setUserToken(null);
+        setUserInfo(null);
+    };
+
+    const fetchUserInfo = async () => {
+        try {
+            const response = await fetch(`${BACKEND_URL}/api/user`, {
+                headers: { 'Authorization': `Bearer ${userToken}` },
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setUserInfo(data);
+            } else {
+                handleLogout(); 
+            }
+        } catch (error) {
+            console.error('Failed to fetch user info:', error);
+            handleLogout();
+        }
+    };
+
+    const fetchFavorites = async () => {
+        if (!userToken) return;
+        try {
+            const response = await fetch(`${BACKEND_URL}/api/favorites`, {
+                headers: { 'Authorization': `Bearer ${userToken}` },
+            });
+            if (response.ok) {
+                const data = await response.json();
+                const formattedFavorites: Station[] = data.map((fav: any) => ({
+                    id: fav.id, // ID가 있다고 가정
+                    name: fav.station_name, 
+                    position: { latitude: fav.latitude, longitude: fav.longitude }
+                }));
+                setFavorites(formattedFavorites);
+            } else if (response.status !== 401) {
+                console.error('Failed to fetch favorites');
+            }
+        } catch (error) {
+            console.error('Fetch Favorites Error:', error);
+        }
+    };
+
+    const handleAuth = async (isSignupMode: boolean) => {
+        setAuthError('');
+        const endpoint = isSignupMode ? '/api/auth/signup' : '/api/auth/login';
+        
+        let payload: any = {}; 
+
+        if (isSignupMode) {
+            if (loginForm.password.length < 6) { return setAuthError('비밀번호는 6자 이상이어야 합니다.'); }
+            if (loginForm.password !== loginForm.passwordConfirm) { return setAuthError('비밀번호와 비밀번호 확인이 일치하지 않습니다.'); }
+            const finalEmail = `${loginForm.emailPrefix}@${loginForm.emailDomain}`;
+            if (!loginForm.emailPrefix || !loginForm.emailDomain || !finalEmail.includes('@')) { return setAuthError('이메일 아이디와 도메인을 정확히 입력해주세요.'); }
+            const phoneRegex = /^\d{10,11}$/;
+            if (!phoneRegex.test(loginForm.phone)) { return setAuthError('유효한 핸드폰 번호(10~11자리 숫자)를 입력해주세요.'); }
+
+            payload = {
+                email: finalEmail,
+                password: loginForm.password,
+                phone: loginForm.phone,
+                isTwoFactorEnabled: loginForm.isTwoFactorEnabled,
+            };
+        } else {
+            payload = {
+                email: loginForm.email, 
+                password: loginForm.password
+            }
+        }
+
+        try {
+            const response = await fetch(BACKEND_URL + endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload), 
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                await handleSetToken(data.token);
+                const initialFormState: LoginFormState = { email: '', password: '', passwordConfirm: '', phone: '', emailPrefix: '', emailDomain: 'gmail.com', isTwoFactorEnabled: false }; 
+                setLoginForm(initialFormState);
+                setIsSignup(false);
+                setAuthError(isSignupMode ? '회원가입 성공!' : '로그인 성공!');
+                Alert.alert(isSignupMode ? '회원가입이 완료되었습니다.' : '로그인 되었습니다.');
+            } else {
+                setAuthError(data.error || '인증 실패');
+            }
+        } catch (error) {
+            console.error('Network or API Error:', error);
+            setAuthError('서버에 연결할 수 없습니다. Node.js 서버가 실행 중인지 확인하세요.');
+        }
+    };
+    
+    const handleLogout = async () => {
+        await handleRemoveToken();
+        setAuthError('로그아웃되었습니다.');
+        Alert.alert('로그아웃되었습니다.');
+    };
+
+    const handleAuthRedirect = () => {
+        setAuthError('대여 및 반납은 로그인 후 이용 가능합니다.');
+        setActiveTab('my');
+    };
+
+    const handleInputChange = (name: keyof LoginFormState, value: string) => {
+        setLoginForm(prevForm => ({ 
+            ...prevForm,
+            [name]: value 
+        }));
+        setAuthError('');
+    };
+
+    const handleSwitchChange = (name: keyof LoginFormState, value: boolean) => {
+        setLoginForm(prevForm => ({
+            ...prevForm,
+            [name]: value
+        }));
+        setAuthError('');
+    }
+    
+    const handleAddFavorite = async (station: Station) => {
+        if (!isLoggedIn) {
+            Alert.alert("즐겨찾기 추가", "로그인 후 이용 가능합니다.");
+            return;
+        }
+        
+        try {
+            const response = await fetch(`${BACKEND_URL}/api/favorites`, {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${userToken}`
+                },
+                body: JSON.stringify({
+                    stationName: station.name,
+                    position: [station.position.latitude, station.position.longitude] 
+                }),
+            });
+            
+            const data = await response.json();
+            
+            if (response.ok) {
+                Alert.alert("즐겨찾기 추가 성공", data.message);
+                fetchFavorites();
+            } else {
+                Alert.alert("추가 실패", data.error);
+            }
+        } catch (error) {
+            Alert.alert("서버 오류", "서버 연결 오류로 즐겨찾기를 추가할 수 없습니다.");
+        }
+    };
+
+    const handleGoToFavorite = (position: StationPosition) => {
+        setMapRegion({ ...mapRegion, latitude: position.latitude, longitude: position.longitude }); 
+        setActiveTab('map'); 
+    };
+    
+    const handleTabToggle = (tabName: string) => {
+        if (activeTab === tabName) {
+            setActiveTab('map');
+        } else {
+            setActiveTab(tabName);
+        }
+    };
+    
+    const handleCenterButtonClick = () => {
+        if (activeTab === 'map') {
+            if (isLoggedIn) {
+                setActiveTab('rental');
+            } else {
+                handleAuthRedirect();
+            }
+        } else {
+            setActiveTab('map');
+        }
+    };
+
+    // --- Sub-Components (TSX) ---
+    const EmailInputFields: React.FC = () => (
+        <View style={styles.emailSplitContainer}>
+            <TextInput
+                placeholder="아이디"
+                value={loginForm.emailPrefix}
+                onChangeText={(text) => handleInputChange('emailPrefix', text)}
+                style={[styles.loginInput, { width: '45%', marginRight: 10 }]}
+            />
+            <Text style={{ marginRight: 10, color: '#555' }}>@</Text>
+            <TextInput
+                placeholder="gmail.com"
+                value={loginForm.emailDomain}
+                onChangeText={(text) => handleInputChange('emailDomain', text)}
+                style={[styles.loginInput, { width: '45%' }]}
+            />
+        </View>
+    );
+    
+    // --- 렌더링 함수 ---
+    
+    const renderHeader = () => {
+        if (activeTab === 'map' || activeTab === 'rental') {
+            return (
+                <View style={styles.header}>
+                    <View style={styles.searchBar}>
+                        <Text style={styles.rentalNumber}>대여소 번호</Text>
+                        <TextInput 
+                            placeholder="원하시는 지역이 어디신가요?" 
+                            style={styles.searchInput}
+                        />
+                    </View>
+                </View>
+            );
+        }
+        return null;
+    };
+
+    const renderMapTab = () => (
+        <View style={styles.map}>
+            <MapView
+                provider={PROVIDER_GOOGLE}
+                style={styles.mapView} 
+                region={mapRegion}
+                onRegionChangeComplete={setMapRegion} 
+            >
+                {stations.map(station => (
+                    <Marker
+                        key={station.id}
+                        coordinate={station.position}
+                        title={station.name}
+                        onPress={() => Alert.alert('대여소 정보', station.name)}
+                    />
+                ))}
+            </MapView>
+        </View>
+    );
+
+    const renderRentalTab = () => (
+        <ScrollView style={styles.rentalPage} contentContainerStyle={{flexGrow: 1}}>
+            <Text style={styles.pageTitle}>우산 대여/반납</Text>
+            
+            <TouchableOpacity style={[styles.actionButton, styles.primaryButton]} onPress={() => Alert.alert("QR코드 스캔", "QR코드 스캔 기능 실행 (목업)")}>
+                <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                    <Icon name="qrcode" size={20} color="#fff" style={{marginRight: 10}} /> 
+                    <Text style={styles.primaryButtonText}>우산 대여 (QR 스캔)</Text>
+                </View>
+            </TouchableOpacity>
+            
+            <TouchableOpacity style={[styles.actionButton, styles.secondaryButton, {marginTop: 15}]} onPress={() => Alert.alert("반납 처리", "반납 처리 기능 실행 (목업)")}>
+                <Text style={styles.secondaryButtonText}>우산 반납</Text>
+            </TouchableOpacity>
+            
+            {isLoggedIn && (
+                <View style={styles.rentalStatusBox}>
+                    <Text style={styles.statusTitle}>대여 현황</Text>
+                    <Text>현재 대여 중인 우산이 없습니다.</Text>
+                    <Text style={styles.statusFooter}>로그인 상태: <Text style={{fontWeight: 'bold', color: '#38b438'}}>{userInfo?.email || '알 수 없음'}</Text></Text>
+                </View>
+            )}
+        </ScrollView>
+    );
+
+    const renderMyTab = () => (
+        <ScrollView style={styles.myPage} contentContainerStyle={{flexGrow: 1}}>
+            <Text style={styles.pageTitle}>마이 페이지</Text>
+            
+            <TouchableOpacity style={styles.myListItem} onPress={isLoggedIn ? handleLogout : () => setIsSignup(!isSignup)}>
+                <Icon name="user" size={20} color="#38b438" style={styles.myIcon}/>
+                <Text>{isLoggedIn ? '로그아웃' : (isSignup ? '로그인으로 돌아가기' : '로그인 / 회원가입')}</Text>
+            </TouchableOpacity>
+
+            {isLoggedIn ? (
+                <View style={[styles.loginStatusBox, styles.loggedInStatus]}>
+                    <Text>환영합니다!</Text>
+                    <Text>현재 사용자: <Text style={{fontWeight: 'bold', color: '#38b438'}}>{userInfo?.email || '알 수 없음'}</Text></Text>
+                    <TouchableOpacity style={[styles.actionButton, styles.secondaryButton]} onPress={handleLogout}>
+                        <Text style={styles.secondaryButtonText}>로그아웃</Text>
+                    </TouchableOpacity>
+                </View>
+            ) : (
+                <View style={styles.loginFormContainer}>
+                    <Text style={styles.formTitle}>{isSignup ? '회원가입' : '로그인'}</Text>
+                    {authError && <Text style={styles.authError}>{authError}</Text>}
+                    
+                    {isSignup ? (
+                        <View>
+                            <EmailInputFields/>
+                            <TextInput 
+                                secureTextEntry
+                                placeholder="비밀번호 (6자 이상)" 
+                                value={loginForm.password} 
+                                onChangeText={(text) => handleInputChange('password', text)} 
+                                style={styles.loginInput} 
+                            />
+                            <TextInput 
+                                secureTextEntry
+                                placeholder="비밀번호 확인" 
+                                value={loginForm.passwordConfirm} 
+                                onChangeText={(text) => handleInputChange('passwordConfirm', text)} 
+                                style={styles.loginInput} 
+                            />
+                            <TextInput 
+                                keyboardType="numeric"
+                                placeholder="핸드폰 번호(숫자만 입력)" 
+                                value={loginForm.phone} 
+                                onChangeText={(text) => handleInputChange('phone', text)} 
+                                style={styles.loginInput} 
+                            />
+                            <View style={styles.twoFactorCheck}>
+                                <Switch
+                                    onValueChange={(value) => handleSwitchChange('isTwoFactorEnabled', value)}
+                                    value={loginForm.isTwoFactorEnabled}
+                                />
+                                <Text style={{marginLeft: 10}}>2단계 인증 활성화</Text>
+                            </View>
+                        </View>
+                    ) : (
+                        <View>
+                            <TextInput 
+                                keyboardType="email-address"
+                                placeholder="이메일" 
+                                value={loginForm.email} 
+                                onChangeText={(text) => handleInputChange('email', text)} 
+                                style={styles.loginInput} 
+                            />
+                            <TextInput 
+                                secureTextEntry
+                                placeholder="비밀번호" 
+                                value={loginForm.password} 
+                                onChangeText={(text) => handleInputChange('password', text)} 
+                                style={styles.loginInput} 
+                            />
+                        </View>
+                    )}
+
+                    <TouchableOpacity style={[styles.actionButton, styles.primaryButton]} onPress={() => handleAuth(isSignup)}>
+                        <Text style={styles.primaryButtonText}>{isSignup ? '회원가입 완료' : '로그인'}</Text>
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity style={[styles.actionButton, styles.secondaryButton, {marginTop: 10}]} onPress={() => setIsSignup(!isSignup)}>
+                        <Text style={styles.secondaryButtonText}>{isSignup ? '로그인 화면으로' : '회원가입'}</Text>
+                    </TouchableOpacity>
+                    
+                    <View style={{marginTop: 20}}>
+                        <TouchableOpacity style={[styles.actionButton, styles.socialGoogleButton]} onPress={() => Alert.alert("소셜 로그인", "Google 연동 목업")}>
+                            <Icon name="google" size={18} color="white" style={{marginRight: 8}} />
+                            <Text style={styles.primaryButtonText}>Google (UI 목업)</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            )}
+            <Text style={styles.footerNote}>* 현재 Node.js 서버(5000포트)와 연동됩니다.</Text>
+        </ScrollView>
+    );
+
+    const renderFavoritesTab = () => (
+        <ScrollView style={styles.favoritesPage} contentContainerStyle={{flexGrow: 1}}>
+            <View style={styles.favoritesHeader}>
+                <Text style={styles.favoritesTitle}>즐겨찾기 목록 ({isLoggedIn ? 'DB 연동' : '로그인 필요'})</Text>
+                <TouchableOpacity style={styles.newList} onPress={() => Alert.alert("리스트", "새 리스트 만들기 목업")}>
+                    <Icon name="plus" size={14} color="#38b438" />
+                    <Text style={{color: '#38b438', marginLeft: 5}}>새 리스트 만들기</Text>
+                </TouchableOpacity>
+            </View>
+            <View style={styles.favoritesListContainer}>
+                {favorites.length > 0 ? (
+                    favorites.map((fav, index) => (
+                        <TouchableOpacity key={index} style={styles.favoriteItem} onPress={() => handleGoToFavorite(fav.position)}>
+                            <View style={styles.itemIconWrapper}>
+                                <Icon name="star" size={18} color="#ffc107" style={styles.itemIcon}/>
+                            </View>
+                            <View style={styles.itemDetails}>
+                                <Text style={styles.itemName}>{fav.name}</Text>
+                                <View style={styles.itemSubInfo}>
+                                    <Icon name="lock" size={10} color="#999" style={{marginRight: 5}}/>
+                                    <Text style={{fontSize: 12, color: '#999'}}>비공개</Text>
+                                </View>
+                            </View>
+                        </TouchableOpacity>
+                    ))
+                ) : (
+                    <Text>{isLoggedIn ? '현재 즐겨찾기에 추가된 대여소가 없습니다.' : '즐겨찾기 목록을 보려면 로그인해 주세요.'}</Text>
+                )}
+            </View>
+        </ScrollView>
+    );
+    
+    // 💡 로딩 중일 때 스플래시 화면 렌더링
+    if (isLoading) {
+        return (
+            <View style={styles.splashContainer}>
+                <Text style={styles.splashText}>우산 공유 서비스</Text>
+                {/* <ActivityIndicator size="large" color="#fff" style={{marginTop: 20}} /> */}
+            </View>
+        );
+    }
+    
+    return (
+        <View style={styles.mapContainer}>
+            {renderHeader()}
+
+            <View style={styles.contentArea}>
+                {activeTab === 'map' && renderMapTab()}
+                {activeTab === 'rental' && renderRentalTab()}
+                {activeTab === 'my' && renderMyTab()}
+                {activeTab === 'favorites' && renderFavoritesTab()}
+            </View>
+
+            <View style={styles.footer}>
+                {activeTab === 'map' && (
+                    <View style={styles.timeDisplayWrapper}>
+                        <Text style={styles.timeDisplay}>12 min</Text>
+                    </View>
+                )}
+                
+                <View style={styles.navButtons}>
+                    <TouchableOpacity style={styles.navButton} onPress={() => handleTabToggle('my')}>
+                        <Text style={styles.navButtonText}>MY</Text>
+                    </TouchableOpacity>
+                    
+                    <View style={styles.navPlaceholder} /> 
+                    
+                    <TouchableOpacity style={styles.navButton} onPress={() => handleTabToggle('favorites')}>
+                        <Text style={styles.navButtonText}>즐겨찾기</Text>
+                    </TouchableOpacity>
+                </View>
+            </View>
+            
+            <View style={styles.centerButtonWrapper}>
+                <TouchableOpacity 
+                    style={styles.centerRoundButton} 
+                    onPress={handleCenterButtonClick}
+                >
+                    {activeTab === 'map' ? (
+                        <Icon name="qrcode" size={32} color="#fff" />
+                    ) : (
+                        <Icon name="home" size={32} color="#fff" />
+                    )}
+                </TouchableOpacity>
+            </View>
+        </View>
+    );
+};
+
+// -----------------------------------------------------------
+// 🌟 통합된 스타일 정의 🌟
+// -----------------------------------------------------------
+const styles = StyleSheet.create({
+    // Splash Screen 스타일
+    splashContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: '#38b438', 
+    },
+    splashText: {
+        fontSize: 30,
+        fontWeight: 'bold',
+        color: '#fff',
+    },
+    
+    // 1. 전체 레이아웃 기본 설정
+    mapContainer: {
+        flex: 1, 
+        backgroundColor: '#fff',
+    },
+    contentArea: {
+        flex: 1, 
+    },
+    
+    // 2. MapView 및 지도 영역 스타일
+    map: {
+        flex: 1, 
+    },
+    mapView: {
+        flex: 1, 
+    },
+    
+    // 3. 하단 네비게이션 (footer) 스타일
+    footer: {
+        backgroundColor: '#fff',
+        borderTopWidth: 1,
+        borderTopColor: '#eee',
+        paddingBottom: Platform.OS === 'ios' ? 20 : 0, 
+    },
+    navButtons: {
+        flexDirection: 'row',
+        justifyContent: 'space-around',
+        alignItems: 'center',
+        height: 60,
+        paddingHorizontal: 20,
+    },
+    navButton: {
+        flex: 1, 
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    navButtonText: {
+        color: '#555',
+        fontSize: 14,
+    },
+    navPlaceholder: {
+        width: 80, 
+        height: '100%',
+    },
+
+    // 4. 중앙 버튼 스타일 (footer 위에 겹쳐서 배치)
+    centerButtonWrapper: {
+        position: 'absolute',
+        bottom: 30, 
+        left: '50%',
+        marginLeft: -35, 
+        zIndex: 10,
+    },
+    centerRoundButton: {
+        width: 70,
+        height: 70,
+        borderRadius: 35,
+        backgroundColor: '#38b438',
+        justifyContent: 'center',
+        alignItems: 'center',
+        ...Platform.select({
+            ios: {
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.25,
+                shadowRadius: 3.84,
+            },
+            android: {
+                elevation: 5,
+            },
+        }),
+    },
+    timeDisplayWrapper: {
+        position: 'absolute',
+        top: -40,
+        alignSelf: 'center',
+        backgroundColor: '#38b438',
+        borderRadius: 15,
+        paddingHorizontal: 15,
+        paddingVertical: 5,
+    },
+    timeDisplay: {
+        color: '#fff',
+        fontWeight: 'bold',
+        fontSize: 14,
+    },
+
+    // 5. 기타 스타일 (헤더, 렌탈, 로그인, 즐겨찾기 등)
+    header: {
+        paddingTop: Platform.OS === 'ios' ? 40 : 15, 
+        paddingHorizontal: 15, 
+        paddingBottom: 10,
+        backgroundColor: '#fff',
+        borderBottomWidth: 1,
+        borderBottomColor: '#eee',
+    },
+    searchBar: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    rentalNumber: {
+        marginRight: 10,
+        fontWeight: 'bold',
+        color: '#555',
+    },
+    searchInput: {
+        flex: 1,
+        borderBottomWidth: 1,
+        borderBottomColor: '#ccc',
+        paddingVertical: 5,
+        paddingHorizontal: 5,
+    },
+    
+    // 렌탈/마이페이지/즐겨찾기 관련 스타일
+    rentalPage: { flex: 1, padding: 20 },
+    myPage: { flex: 1, padding: 20 },
+    favoritesPage: { flex: 1, padding: 20 },
+    pageTitle: { fontSize: 24, fontWeight: 'bold', marginBottom: 20 },
+    actionButton: { padding: 15, borderRadius: 8, alignItems: 'center' },
+    primaryButton: { backgroundColor: '#38b438' },
+    secondaryButton: { borderWidth: 1, borderColor: '#38b438' },
+    primaryButtonText: { color: '#fff', fontWeight: 'bold' },
+    secondaryButtonText: { color: '#38b438', fontWeight: 'bold' },
+    
+    // 로그인/회원가입 폼 스타일
+    loginFormContainer: { marginVertical: 15, padding: 15, borderWidth: 1, borderColor: '#eee', borderRadius: 8 },
+    formTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 10, color: '#38b438' },
+    authError: { color: 'red', marginBottom: 10, textAlign: 'center' },
+    loginInput: { borderWidth: 1, borderColor: '#ccc', padding: 10, borderRadius: 5, marginBottom: 10 },
+    emailSplitContainer: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+    twoFactorCheck: { flexDirection: 'row', alignItems: 'center', marginBottom: 15 },
+    
+    // 마이페이지 목록
+    myListItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: '#eee' },
+    myIcon: { marginRight: 10 },
+    loginStatusBox: { padding: 15, backgroundColor: '#f9f9f9', borderRadius: 8, marginTop: 15, alignItems: 'center' },
+    loggedInStatus: { borderColor: '#38b438', borderWidth: 1 },
+    footerNote: { marginTop: 30, fontSize: 12, color: '#999', textAlign: 'center' },
+
+    // 렌탈 상태 박스
+    rentalStatusBox: { 
+        padding: 15, 
+        backgroundColor: '#e6ffe6',
+        borderRadius: 8, 
+        marginTop: 20, 
+        borderWidth: 1,
+        borderColor: '#38b438'
+    },
+    statusTitle: { 
+        fontSize: 16, 
+        fontWeight: 'bold', 
+        marginBottom: 5,
+        color: '#38b438'
+    },
+    statusFooter: { 
+        marginTop: 10, 
+        fontSize: 12, 
+        color: '#777' 
+    },
+
+    // 즐겨찾기 스타일
+    favoritesHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
+    favoritesTitle: { fontSize: 18, fontWeight: 'bold' },
+    newList: { flexDirection: 'row', alignItems: 'center' },
+    favoritesListContainer: { marginTop: 10 },
+    favoriteItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
+    itemIconWrapper: { width: 30, alignItems: 'center' },
+    itemDetails: { flex: 1, marginLeft: 10 },
+    itemName: { fontSize: 16 },
+    itemSubInfo: { flexDirection: 'row', marginTop: 3 },
+    
+    // 아이콘 관련 스타일
+    itemIcon: {},
+    socialGoogleButton: { backgroundColor: '#db4437' },
+});
+
+
+export default MapComponent;
